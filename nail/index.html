@@ -3,9 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>雲端智能建檔系統 (Vercel 修復版)</title>
+  <title>雲端智能建檔系統 (Vercel 正式上線版)</title>
   
-  <!-- 修正資源連結：移除錯誤的 Markdown 語法 -->
+  <!-- 修正後的資源連結 -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -38,6 +38,7 @@
       appId: "1:1004628981925:web:db01ede0c09f4071d5754c"
     };
 
+    // ✨ 請確認此 Key 是否為截圖中具備 "Generative Language API" 權限的那組
     const GEMINI_API_KEY = "AIzaSyDznYhxz5z7WNqQtyQa1DtLilqYwSncUq0"; 
 
     if (!firebase.apps.length) { firebase.initializeApp(firebaseConfig); }
@@ -51,7 +52,7 @@
     const COPYWRITING_STYLES = ['隨機驚喜', '法式優雅名媛', '日系甜美純慾', '歐美個性暗黑', '極簡高階質感', '活潑可愛少女'];
 
     const Toast = ({ message, type, onClose }) => {
-      useEffect(() => { const timer = setTimeout(onClose, 3500); return () => clearTimeout(timer); }, [onClose]);
+      useEffect(() => { const timer = setTimeout(onClose, 4500); return () => clearTimeout(timer); }, [onClose]);
       const bgColor = type === 'success' ? 'bg-black' : 'bg-red-600';
       return (
         <div className={`fixed top-8 left-1/2 transform -translate-x-1/2 w-[90%] md:w-auto max-w-sm ${bgColor} text-white px-6 py-4 rounded-[28px] shadow-2xl flex items-center gap-3 z-[100] border border-white/10 animate-fade-in-up`}>
@@ -119,21 +120,24 @@
           dbData.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
           setInventory(dbData);
           setIsLoadingDB(false);
+        }, (err) => {
+          console.error("Firestore Error:", err);
+          showToast("資料同步異常", "error");
         });
         return () => unsubDB();
       }, [user]);
 
-      // ✨ AI 呼叫修復：移除報錯的 responseMimeType，改用強 Prompt 與清洗
+      // ✨ AI 呼叫修復：切換至 v1beta 並具備容錯處理
       const callGeminiAI = async (base64Data, promptText) => {
         try {
-          const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+          const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
           const res = await fetch(url, {
             method: 'POST', 
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               contents: [{ 
                 parts: [
-                  { text: `你是一位資深美甲主理人，請精準分析圖片並回傳 JSON 格式。請勿包含任何 Markdown 標記（如 \`\`\`json）。指令：${promptText}` },
+                  { text: `你是一位資深美甲主理人，請精準分析圖片並回傳 JSON。嚴禁包含 Markdown 標記。任務：${promptText}` },
                   { inlineData: { mimeType: "image/jpeg", data: base64Data } }
                 ] 
               }]
@@ -141,14 +145,16 @@
           });
           
           const jsonRes = await res.json();
-          if (jsonRes.error) throw new Error(jsonRes.error.message);
+          if (jsonRes.error) {
+             throw new Error(jsonRes.error.message);
+          }
           
           let text = jsonRes.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
           const cleanText = text.replace(/```json/g, '').replace(/```/g, '').trim();
           return JSON.parse(cleanText);
         } catch(e) { 
-          console.error("AI 錯誤：", e);
-          showToast(`AI 辨識異常`, "error"); 
+          console.error("AI Error:", e);
+          showToast(`辨識異常：模型未就緒或網域限制`, "error"); 
           return null;
         }
       };
@@ -158,7 +164,7 @@
         setIsStockTaking(true);
         try {
           const aiUrl = await compressImage(file, 1024);
-          const data = await callGeminiAI(aiUrl.split(',')[1], `盤點 3x3。清單：${JSON.stringify(inventory.map(i => ({ id: i.id, name: i.name })))}。回傳：{"results": [{"matchedId": "ID", "detectedSize": "M"}]}`);
+          const data = await callGeminiAI(aiUrl.split(',')[1], `盤點照片。現有：${JSON.stringify(inventory.map(i => ({ id: i.id, name: i.name })))}。回傳：{"results": [{"matchedId": "ID", "detectedSize": "M"}]}`);
           if (data && data.results) {
             let newS = { ...scanSession };
             data.results.forEach(res => {
@@ -167,12 +173,12 @@
                 if (item) {
                   const sz = res.detectedSize || 'M';
                   newS[item.id] = { ...(newS[item.id]||{}), [sz]: (newS[item.id]?.[sz] || 0) + 1 };
-                  setScanLogs(old => [`✅ 偵測：${item.name} (${sz})`, ...old]);
+                  setScanLogs(old => [`✅ 偵測到：${item.name} (${sz})`, ...old]);
                 }
               }
             });
             setScanSession(newS);
-            showToast("辨識完成！");
+            showToast("辨識成功！");
           }
         } finally { setIsStockTaking(false); }
       };
@@ -185,7 +191,7 @@
           const displayUrl = await compressImage(file, 800);
           setUploadedMediaRaw({ url: displayUrl, type: 'image' });
 
-          const data = await callGeminiAI(aiUrl.split(',')[1], `分析美甲。風格：${uploadStyle}。已知：${JSON.stringify(inventory.map(i => ({ id: i.id, name: i.name })))}。回傳：{"items": [{"matchedId": "ID或null", "detectedSize": "M", "styleName": "品名", "description": "100字符合風格吸引人文案", "shape": "甲型", "hashtags": "#標籤"}]}`);
+          const data = await callGeminiAI(aiUrl.split(',')[1], `建檔辨識。風格：${uploadStyle}。已知：${JSON.stringify(inventory.map(i => ({ id: i.id, name: i.name })))}。回傳：{"items": [{"matchedId": "ID或null", "detectedSize": "M", "styleName": "品名", "description": "100字文案", "shape": "甲型", "hashtags": "#標籤"}]}`);
           if (data && data.items) {
             setDrafts(data.items.map((it, i) => {
               const matched = it.matchedId ? inventory.find(inv => inv.id === it.matchedId) : null;
@@ -231,9 +237,9 @@
         <div className="min-h-screen flex items-center justify-center bg-[#F2F2F7] p-6">
           <div className="bg-white p-14 rounded-[56px] shadow-2xl text-center max-w-sm w-full border border-gray-100 animate-fade-in-up">
             <div className="text-7xl mb-6">💅</div>
-            <h1 className="text-3xl font-black mb-2 tracking-tight text-gray-900">雲端管理系統</h1>
-            <p className="text-gray-400 text-xs mb-10 font-bold uppercase tracking-[0.3em]">Management Center</p>
-            <button onClick={() => auth.signInWithPopup(new firebase.auth.GoogleAuthProvider())} className="w-full bg-black text-white py-6 rounded-[28px] font-black shadow-xl active:scale-95 transition-all">Google 快速登入</button>
+            <h1 className="text-3xl font-black mb-2 tracking-tight">雲端管理系統</h1>
+            <p className="text-gray-400 text-xs mb-10 font-bold uppercase tracking-[0.3em]">Cloud Infrastructure</p>
+            <button onClick={() => auth.signInWithPopup(new firebase.auth.GoogleAuthProvider())} className="w-full bg-black text-white py-6 rounded-[28px] font-black shadow-xl active:scale-95 transition-all">Google 登入系統</button>
           </div>
         </div>
       );
@@ -257,7 +263,7 @@
           }} className="hidden" />
 
           <header className="glass-effect sticky top-0 z-30 px-8 py-6 flex justify-between items-center border-b border-gray-100">
-            <h1 className="font-black text-2xl tracking-tighter text-black">MyNail. <span className="text-gray-300 font-medium ml-1">Cloud</span></h1>
+            <h1 className="font-black text-2xl tracking-tighter text-black">MyNail. <span className="text-gray-300 font-medium">Cloud</span></h1>
             <button onClick={() => auth.signOut()} className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Logout</button>
           </header>
 
@@ -265,7 +271,7 @@
             {activeTab === 'inventory' && (
               <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-5">
                 {isLoadingDB ? (
-                   <div className="col-span-full py-40 text-center font-black text-gray-200 text-3xl">LOADING...</div>
+                   <div className="col-span-full py-40 text-center font-black text-gray-200 text-3xl italic">LOADING DATA...</div>
                 ) : inventory.map(item => (
                   <div key={item.id} onClick={() => setEditingItem(JSON.parse(JSON.stringify(item)))} className="bg-white rounded-[44px] p-3 shadow-sm border border-gray-100 active:scale-95 transition-all hover:shadow-lg cursor-pointer">
                     <div className="aspect-[4/5] rounded-[34px] overflow-hidden mb-4 bg-gray-50">
@@ -284,18 +290,18 @@
               <div className="max-w-md mx-auto py-10 space-y-6">
                 <div className="bg-white p-14 rounded-[60px] border-2 border-dashed border-gray-200 text-center shadow-sm">
                   <div className="text-7xl mb-6">🔍</div>
-                  <h2 className="text-2xl font-black mb-3 text-black">智慧盤點</h2>
-                  <p className="text-gray-400 text-sm mb-12 font-bold leading-relaxed">對準盤點盒，AI 將核對庫存</p>
+                  <h2 className="text-2xl font-black mb-3">智慧盤點</h2>
+                  <p className="text-gray-400 text-sm mb-12 font-bold leading-relaxed">請拍照盤點盒，AI 將自動核對數據</p>
                   <div className="flex flex-col gap-4">
                     <button disabled={isStockTaking} onClick={() => scanCameraRef.current.click()} className="w-full bg-blue-600 text-white py-6 rounded-[28px] font-black text-xl shadow-2xl active:scale-95 disabled:opacity-50">📸 開啟相機</button>
-                    <button disabled={isStockTaking} onClick={() => scanGalleryRef.current.click()} className="w-full bg-white text-blue-600 border-2 border-blue-600 py-5 rounded-[28px] font-black text-lg active:scale-95 transition-all">🖼️ 相簿選取</button>
+                    <button disabled={isStockTaking} onClick={() => scanGalleryRef.current.click()} className="w-full bg-white text-blue-600 border-2 border-blue-600 py-5 rounded-[28px] font-black text-lg active:scale-95">🖼️ 相簿選取</button>
                   </div>
                 </div>
                 {scanLogs.length > 0 && (
                    <div className="bg-white rounded-[40px] p-8 border shadow-sm">
                       <div className="flex justify-between items-center mb-6">
-                        <h3 className="font-black text-xl text-black tracking-tighter">盤點日誌</h3>
-                        <button onClick={() => setShowCompareModal(true)} className="bg-pink-500 text-white text-xs font-black px-5 py-2.5 rounded-full animate-pulse shadow-lg">核對確認</button>
+                        <h3 className="font-black text-xl text-black">盤點日誌</h3>
+                        <button onClick={() => setShowCompareModal(true)} className="bg-pink-500 text-white text-xs font-black px-5 py-2.5 rounded-full animate-pulse shadow-lg">核對並同步</button>
                       </div>
                       <div className="max-h-72 overflow-y-auto space-y-3 hide-scrollbar">
                         {scanLogs.map((log, i) => <div key={i} className="text-xs font-bold text-gray-500 bg-gray-50 p-4 rounded-2xl border border-gray-100">{log}</div>)}
@@ -309,34 +315,34 @@
               <div className="max-w-xl mx-auto py-8">
                 {isScanning ? (
                   <div className="text-center py-32 animate-pulse">
-                    <div className="text-7xl mb-6 text-black">🧠</div>
-                    <div className="font-black text-3xl text-black">AI 辨識中...</div>
+                    <div className="text-7xl mb-6 text-black tracking-widest">🧠</div>
+                    <div className="font-black text-3xl text-black">AI 正在辨識特徵中...</div>
                   </div>
                 ) : drafts.length === 0 ? (
                   <div className="text-center bg-white rounded-[60px] border-2 border-dashed border-gray-200 p-16 shadow-sm">
                     <div className="text-7xl mb-8">✨</div>
-                    <h2 className="text-3xl font-black mb-10 tracking-tight text-black">AI 智慧建檔</h2>
+                    <h2 className="text-3xl font-black mb-10 tracking-tight text-black">AI 批次建檔</h2>
                     <div className="mb-12">
-                      <label className="block text-[11px] font-black text-gray-400 mb-3 uppercase tracking-widest text-center">文案生成靈魂風格</label>
-                      <select value={uploadStyle} onChange={(e) => setUploadStyle(e.target.value)} className="w-full bg-gray-50 border-none rounded-[24px] p-5 font-black text-pink-500 text-center outline-none shadow-inner appearance-none">
+                      <label className="block text-[11px] font-black text-gray-400 mb-3 uppercase tracking-widest text-center">生成風格選擇</label>
+                      <select value={uploadStyle} onChange={(e) => setUploadStyle(e.target.value)} className="w-full bg-gray-50 border-none rounded-[24px] p-5 font-black text-pink-500 text-center outline-none shadow-inner appearance-none cursor-pointer">
                         {COPYWRITING_STYLES.map(s => <option key={s} value={s}>{s}</option>)}
                       </select>
                     </div>
                     <div className="flex flex-col gap-4">
-                      <button onClick={() => cameraInputRef.current.click()} className="w-full bg-black text-white py-6 rounded-[28px] font-black text-2xl shadow-2xl active:scale-95">📸 拍照批次建檔</button>
-                      <button onClick={() => galleryInputRef.current.click()} className="w-full bg-white text-black border-2 border-black py-5 rounded-[28px] font-black text-lg active:scale-95 transition-all">🖼️ 相簿選取</button>
+                      <button onClick={() => cameraInputRef.current.click()} className="w-full bg-black text-white py-6 rounded-[28px] font-black text-2xl shadow-2xl active:scale-95 transition-all">📸 拍照批次建檔</button>
+                      <button onClick={() => galleryInputRef.current.click()} className="w-full bg-white text-black border-2 border-black py-5 rounded-[28px] font-black text-lg active:scale-95 transition-all">🖼️ 從相簿選取圖片</button>
                     </div>
                   </div>
                 ) : (
                   <div className="space-y-6 pb-20">
                     <div className="flex justify-between items-center bg-black text-white p-6 rounded-[32px] shadow-xl">
-                       <div className="font-black text-lg tracking-tight">✅ 已辨識 {drafts.length} 款式</div>
+                       <div className="font-black text-lg">✅ 辨識出 {drafts.length} 款式</div>
                        <button onClick={() => setDrafts([])} className="text-xs bg-white/20 px-5 py-2 rounded-full font-black uppercase tracking-widest">Reset</button>
                     </div>
                     {drafts.map(d => (
                       <div key={d.uid} className="bg-white p-8 rounded-[48px] border-2 border-gray-50 shadow-xl space-y-5">
                         <input value={d.formData.name} onChange={e => setDrafts(drafts.map(it => it.uid===d.uid?{...it, formData:{...it.formData, name: e.target.value}}:it))} className="w-full font-black text-2xl outline-none border-b border-gray-100 pb-3 text-black" />
-                        <div className="text-[11px] font-black text-blue-500 tracking-wider uppercase">{d.isMatch ? '匹配現有款式：自動增庫' : '全新款式建立：新檔案'}</div>
+                        <div className="text-[11px] font-black text-blue-500 tracking-wider uppercase">{d.isMatch ? '匹配現有款式：自動增庫' : '全新款式建立：建立新檔案'}</div>
                         <textarea value={d.formData.description} onChange={e => setDrafts(drafts.map(it => it.uid===d.uid?{...it, formData:{...it.formData, description: e.target.value}}:it))} className="w-full text-sm bg-gray-50 p-5 rounded-[24px] h-32 outline-none border-none text-gray-500 font-bold leading-relaxed" />
                         <div className="flex flex-wrap gap-3">
                            <input placeholder="#標籤" value={d.formData.hashtags} onChange={e => setDrafts(drafts.map(it => it.uid===d.uid?{...it, formData:{...it.formData, hashtags: e.target.value}}:it))} className="flex-1 text-xs font-black bg-pink-50 text-pink-500 p-5 rounded-[20px] outline-none border-none shadow-inner" />
@@ -353,38 +359,35 @@
             {activeTab === 'export' && (
               <div className="max-w-md mx-auto py-10 bg-white p-20 rounded-[64px] shadow-sm text-center border">
                  <div className="text-8xl mb-12">📊</div>
-                 <h2 className="text-3xl font-black mb-16 tracking-tight text-black">全庫存匯出系統</h2>
+                 <h2 className="text-3xl font-black mb-16 tracking-tight text-black">CSV 報表匯出</h2>
                  <button onClick={() => {
                     const content = ['編號,名稱,甲型,描述,標籤,XS,S,M,L', ...inventory.map(i => [i.id, i.name, i.shape, i.description?.replace(/,/g,' '), i.hashtags, i.stock.XS, i.stock.S, i.stock.M, i.stock.L].join(','))].join('\n');
                     const blob = new Blob(['\ufeff' + content], { type: 'text/csv;charset=utf-8;' });
                     const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `Inventory_${new Date().toISOString().split('T')[0]}.csv`; link.click();
-                 }} className="bg-black text-white py-6 rounded-[28px] font-black w-full shadow-2xl active:scale-95 transition-all">⬇️ 點此下載 CSV 數據</button>
+                 }} className="bg-black text-white py-6 rounded-[28px] font-black w-full shadow-2xl active:scale-95 transition-all">⬇️ 點此下載數據</button>
               </div>
             )}
           </main>
 
-          {/* ✏️ 編輯視窗：媒體、描述、標籤 */}
+          {/* ✏️ 恢復完整功能編輯窗：增刪、標籤、描述 */}
           {editingItem && (
             <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xl flex items-center justify-center p-4">
                <div className="bg-white rounded-[60px] p-10 w-full max-w-2xl max-h-[92vh] overflow-y-auto hide-scrollbar animate-fade-in-up">
-                  <div className="flex justify-between items-center mb-10">
-                     <h2 className="font-black text-3xl tracking-tight text-black">編輯款式詳情</h2>
+                  <div className="flex justify-between items-center mb-10 border-b pb-6">
+                     <h2 className="font-black text-3xl tracking-tight text-black">編輯款式內容</h2>
                      <button onClick={() => setEditingItem(null)} className="p-4 bg-gray-50 rounded-full hover:bg-gray-100 transition-colors">✕</button>
                   </div>
                   <div className="space-y-10">
                      <div>
                         <div className="flex justify-between items-end mb-5">
-                          <div>
-                             <label className="text-[11px] font-black text-gray-400 uppercase tracking-widest block mb-1">MEDIA GALLERY</label>
-                             <h4 className="font-bold text-sm text-black">媒體與影片內容</h4>
-                          </div>
-                          <button onClick={() => editFileInputRef.current.click()} className="text-[11px] bg-black text-white px-6 py-2.5 rounded-full font-black shadow-lg">＋ 增加媒體</button>
+                          <label className="text-[11px] font-black text-gray-400 uppercase tracking-widest block mb-1 tracking-widest">媒體內容管理</label>
+                          <button onClick={() => editFileInputRef.current.click()} className="text-[11px] bg-black text-white px-6 py-2.5 rounded-full font-black shadow-lg">＋ 新增照片</button>
                         </div>
                         <div className="grid grid-cols-4 gap-4">
                            {editingItem.media?.map((m, i) => (
                              <div key={m.id} className="aspect-[3/4] relative group rounded-[28px] overflow-hidden border border-gray-100 bg-gray-50 shadow-inner">
-                               {m.type === 'image' ? <img src={m.url} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-2xl">📹</div>}
-                               <button onClick={() => setEditingItem({...editingItem, media: editingItem.media.filter((_, idx)=>idx!==i)})} className="absolute top-2 right-2 bg-red-500 text-white p-2 rounded-xl text-[12px] font-bold shadow-2xl opacity-100 transition-opacity">✕</button>
+                               {m.type === 'image' ? <img src={m.url} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-2xl font-black">📹</div>}
+                               <button onClick={() => setEditingItem({...editingItem, media: editingItem.media.filter((_, idx)=>idx!==i)})} className="absolute top-2 right-2 bg-red-500 text-white p-2 rounded-xl text-[12px] font-bold shadow-2xl transition-opacity">✕</button>
                              </div>
                            ))}
                         </div>
@@ -394,58 +397,26 @@
                         <div><label className="block text-[11px] font-black text-gray-400 mb-2 uppercase tracking-wider">甲型</label><select value={editingItem.shape} onChange={e => setEditingItem({...editingItem, shape:e.target.value})} className="w-full p-5 bg-gray-50 rounded-[24px] font-black text-lg outline-none border-none shadow-inner text-black">{NAIL_SHAPES.map(s => <option key={s} value={s}>{s}</option>)}</select></div>
                      </div>
                      <div>
-                        <label className="block text-[11px] font-black text-gray-400 mb-2 uppercase tracking-wider">多風格款式文案描述</label>
+                        <label className="block text-[11px] font-black text-gray-400 mb-2 uppercase tracking-wider text-black">詳細款式描述 (多風格內容)</label>
                         <textarea value={editingItem.description} onChange={e => setEditingItem({...editingItem, description:e.target.value})} className="w-full p-6 bg-gray-50 rounded-[30px] font-bold text-sm h-40 outline-none border-none shadow-inner leading-relaxed text-gray-600 focus:ring-2 ring-black" />
                      </div>
                      <div>
-                        <label className="block text-[11px] font-black text-gray-400 mb-2 uppercase tracking-wider text-pink-400">款式標籤 (#)</label>
-                        <input value={editingItem.hashtags} onChange={e => setEditingItem({...editingItem, hashtags:e.target.value})} placeholder="#優雅 #法式" className="w-full p-5 bg-pink-50 rounded-[24px] font-black text-pink-500 outline-none border-none shadow-inner focus:ring-2 ring-pink-300" />
+                        <label className="block text-[11px] font-black text-gray-400 mb-2 uppercase tracking-wider text-pink-500 font-black">款式標籤 (#)</label>
+                        <input value={editingItem.hashtags} onChange={e => setEditingItem({...editingItem, hashtags:e.target.value})} placeholder="#優雅 #氣質" className="w-full p-5 bg-pink-50 rounded-[24px] font-black text-pink-500 outline-none border-none shadow-inner focus:ring-2 ring-pink-300" />
                      </div>
                      <div>
-                        <label className="block text-[11px] font-black text-gray-400 mb-5 uppercase tracking-[0.2em] text-center">庫存管理 (件)</label>
+                        <label className="block text-[11px] font-black text-gray-400 mb-5 uppercase tracking-[0.2em] text-center">庫存管理 (數量調整)</label>
                         <div className="grid grid-cols-4 gap-4">
-                           {['XS','S','M','L'].map(s => <div key={s} className="text-center"><div className="text-[11px] font-black text-gray-400 mb-2 uppercase">{s}</div><input type="number" value={editingItem.stock[s]} onChange={e => setEditingItem({...editingItem, stock:{...editingItem.stock, [s]:parseInt(e.target.value)||0}})} className="w-full text-center border-none bg-gray-50 p-5 rounded-[24px] font-black text-xl shadow-inner focus:ring-2 ring-black text-black" /></div>)}
+                           {['XS','S','M','L'].map(s => <div key={s} className="text-center"><div className="text-[11px] font-black text-gray-400 mb-2 uppercase font-mono">{s}</div><input type="number" value={editingItem.stock[s]} onChange={e => setEditingItem({...editingItem, stock:{...editingItem.stock, [s]:parseInt(e.target.value)||0}})} className="w-full text-center border-none bg-gray-50 p-5 rounded-[24px] font-black text-xl shadow-inner focus:ring-2 ring-black text-black" /></div>)}
                         </div>
                      </div>
                      <div className="flex gap-5 pt-10 border-t border-gray-100">
-                        <button onClick={async () => {if(window.confirm("確定刪除此商品？")) { await db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('inventory').doc(editingItem.id).delete(); setEditingItem(null); showToast("已永久移除"); }}} className="flex-1 bg-red-50 text-red-500 py-6 rounded-[30px] font-black tracking-tight">刪除</button>
-                        <button onClick={async () => { await db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('inventory').doc(editingItem.id).update(editingItem); setEditingItem(null); showToast("更新完成 💾"); }} className="flex-[2] bg-black text-white py-6 rounded-[30px] font-black text-xl shadow-2xl active:scale-95 transition-all">更新雲端檔案</button>
+                        <button onClick={async () => {if(window.confirm("確定刪除此商品？")) { await db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('inventory').doc(editingItem.id).delete(); setEditingItem(null); showToast("已永久移除商品"); }}} className="flex-1 bg-red-50 text-red-500 py-6 rounded-[30px] font-black tracking-tight">刪除</button>
+                        <button onClick={async () => { await db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('inventory').doc(editingItem.id).update(editingItem); setEditingItem(null); showToast("更新完成 💾"); }} className="flex-[2] bg-black text-white py-6 rounded-[30px] font-black text-xl shadow-2xl active:scale-95 transition-all">更新雲端數據</button>
                      </div>
                   </div>
                </div>
             </div>
-          )}
-
-          {/* 📊 盤點核對 */}
-          {showCompareModal && (
-             <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xl flex items-center justify-center p-4">
-                <div className="bg-white rounded-[60px] p-10 w-full max-w-xl max-h-[85vh] overflow-y-auto hide-scrollbar animate-fade-in-up shadow-2xl">
-                   <div className="flex justify-between items-center mb-8 border-b pb-4"><h2 className="font-black text-2xl text-black">📋 核對盤點單</h2><button onClick={() => setShowCompareModal(false)} className="p-4 bg-gray-50 rounded-full">✕</button></div>
-                   <div className="space-y-4 mb-10">
-                      {Object.keys(scanSession).length === 0 ? <p className="text-center text-gray-300 font-bold py-16 text-lg tracking-wider">尚未偵測到任何款式數據</p> : Object.entries(scanSession).map(([id, sizes]) => {
-                        const item = inventory.find(i => i.id === id);
-                        return item ? Object.entries(sizes).map(([s, c]) => (
-                          <div key={id+s} className="flex justify-between items-center p-6 bg-gray-50 rounded-[30px] border border-gray-100 shadow-inner">
-                             <div className="font-black text-base text-gray-900">{item.name} <span className="text-xs text-pink-500 ml-1 font-mono tracking-widest">({s})</span></div>
-                             <div className="font-black text-sm text-gray-400 uppercase tracking-tighter">System {item.stock[s]||0} → <span className="text-blue-600 text-2xl font-mono ml-2">{c}</span></div>
-                          </div>
-                        )) : null;
-                      })}
-                   </div>
-                   <button onClick={async () => {
-                      const batch = db.batch();
-                      for (const [id, szs] of Object.entries(scanSession)) {
-                        const it = inventory.find(i => i.id === id);
-                        if(it) {
-                           const nS = { ...it.stock };
-                           for (const [s, c] of Object.entries(szs)) nS[s] = c;
-                           batch.update(db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('inventory').doc(id), { stock: nS });
-                        }
-                      }
-                      await batch.commit(); setScanSession({}); setScanLogs([]); setShowCompareModal(false); showToast("庫存同步成功！");
-                   }} className="w-full bg-black text-white py-7 rounded-[32px] font-black text-xl shadow-2xl active:scale-95 transition-all">確認無誤並覆蓋數據 💾</button>
-                </div>
-             </div>
           )}
 
           <nav className="fixed bottom-0 left-0 right-0 glass-effect border-t border-gray-100 pb-safe z-40 flex justify-around items-end px-6 h-28">
