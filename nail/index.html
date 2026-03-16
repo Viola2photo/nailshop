@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>雲端智能建檔系統 (功能全修復版)</title>
+  <title>雲端智能建檔系統 (Vercel 全效能版)</title>
   
   <script src="https://cdn.tailwindcss.com"></script>
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -20,10 +20,11 @@
     @keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
     .hide-scrollbar::-webkit-scrollbar { display: none; }
     body { -webkit-tap-highlight-color: transparent; outline: none; }
-    input, textarea, select { font-size: 16px !important; } /* 防止 iOS 自動縮放 */
+    input, textarea, select { font-size: 16px !important; }
+    .glass-effect { background: rgba(255, 255, 255, 0.8); backdrop-filter: blur(12px); }
   </style>
 </head>
-<body class="bg-[#FDFDFD] text-gray-900 font-sans selection:bg-pink-100">
+<body class="bg-[#F9F9F9] text-gray-900 font-sans selection:bg-pink-100">
   <div id="root"></div>
 
   <script type="text/babel">
@@ -36,7 +37,7 @@
       appId: "1:1004628981925:web:db01ede0c09f4071d5754c"
     };
 
-    // ✨ 修正後的 API Key 與 Endpoint
+    // ✨ 核心密鑰
     const GEMINI_API_KEY = "AIzaSyDznYhxz5z7WNqQtyQa1DtLilqYwSncUq0"; 
 
     if (!firebase.apps.length) { firebase.initializeApp(firebaseConfig); }
@@ -53,9 +54,9 @@
       useEffect(() => { const timer = setTimeout(onClose, 3500); return () => clearTimeout(timer); }, [onClose]);
       const bgColor = type === 'success' ? 'bg-black' : 'bg-red-600';
       return (
-        <div className={`fixed top-8 left-1/2 transform -translate-x-1/2 w-[90%] md:w-auto max-w-sm ${bgColor} text-white px-6 py-4 rounded-[24px] shadow-2xl flex items-center gap-3 z-[100] border border-white/10 animate-fade-in-up`}>
+        <div className={`fixed top-8 left-1/2 transform -translate-x-1/2 w-[90%] md:w-auto max-w-sm ${bgColor} text-white px-6 py-4 rounded-[28px] shadow-2xl flex items-center gap-3 z-[100] border border-white/10 animate-fade-in-up`}>
           <span className="text-xl">{type === 'success' ? '✅' : '⚠️'}</span>
-          <span className="font-bold text-sm">{message}</span>
+          <span className="font-bold text-sm tracking-tight">{message}</span>
         </div>
       );
     };
@@ -87,7 +88,6 @@
       const [isLoadingDB, setIsLoadingDB] = useState(true);
       const [user, setUser] = useState(null);
 
-      // 核心狀態
       const [isScanning, setIsScanning] = useState(false);
       const [drafts, setDrafts] = useState([]); 
       const [uploadStyle, setUploadStyle] = useState('隨機驚喜');
@@ -123,29 +123,31 @@
         return () => unsubDB();
       }, [user]);
 
-      // ✨ 修復關鍵：使用 v1beta 呼叫解決 "not found" 錯誤
+      // ✨ 更強健的 AI 呼叫邏輯 (針對 Vercel 優化)
       const callGeminiAI = async (base64Data, promptText) => {
         try {
+          // 使用全路徑和指定的最新模型標識符
           const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
           const res = await fetch(url, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            method: 'POST', 
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               contents: [{ 
                 parts: [
-                  { text: `你是美甲主理人，請精準辨識圖片並只回傳純粹 JSON。不要 Markdown 標籤。任務：${promptText}` },
+                  { text: `你是一位資深美甲主理人，請精準分析並只回傳 JSON 格式。嚴禁包含任何 Markdown 標記。任務指令：${promptText}` },
                   { inlineData: { mimeType: "image/jpeg", data: base64Data } }
                 ] 
-              }]
+              }],
+              generationConfig: { responseMimeType: "application/json" } // ✨ 強制 JSON 輸出
             })
           });
           const jsonRes = await res.json();
           if (jsonRes.error) throw new Error(jsonRes.error.message);
-          let text = jsonRes.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
-          const cleanText = text.replace(/```json/g, '').replace(/```/g, '').trim();
-          return JSON.parse(cleanText);
+          const text = jsonRes.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+          return JSON.parse(text);
         } catch(e) { 
           console.error("AI Error:", e);
-          showToast(`辨識失敗，請檢查網路或 API`, "error"); 
+          showToast(`辨識異常，請檢查 API 或圖片品質`, "error"); 
           return null;
         }
       };
@@ -154,8 +156,8 @@
         const file = e.target.files[0]; if (!file) return; e.target.value = ''; 
         setIsStockTaking(true);
         try {
-          const aiUrl = await compressImage(file, 1200);
-          const data = await callGeminiAI(aiUrl.split(',')[1], `盤點圖片。現有清單：${JSON.stringify(inventory.map(i => ({ id: i.id, name: i.name })))}。回傳格式：{"results": [{"matchedId": "ID", "detectedSize": "M"}]}`);
+          const aiUrl = await compressImage(file, 1024);
+          const data = await callGeminiAI(aiUrl.split(',')[1], `盤點照片分析。已知庫存：${JSON.stringify(inventory.map(i => ({ id: i.id, name: i.name })))}。回傳：{"results": [{"matchedId": "ID", "detectedSize": "M"}]}`);
           if (data && data.results) {
             let newS = { ...scanSession };
             data.results.forEach(res => {
@@ -164,7 +166,7 @@
                 if (item) {
                   const sz = res.detectedSize || 'M';
                   newS[item.id] = { ...(newS[item.id]||{}), [sz]: (newS[item.id]?.[sz] || 0) + 1 };
-                  setScanLogs(old => [`✅ 偵測到：${item.name} (${sz})`, ...old]);
+                  setScanLogs(old => [`✅ 盤點：${item.name} (${sz})`, ...old]);
                 }
               }
             });
@@ -178,11 +180,11 @@
         const file = e.target.files[0]; if (!file) return; e.target.value = '';
         setIsScanning(true); setDrafts([]);
         try {
-          const aiUrl = await compressImage(file, 1500);
+          const aiUrl = await compressImage(file, 1200);
           const displayUrl = await compressImage(file, 800);
           setUploadedMediaRaw({ url: displayUrl, type: 'image' });
 
-          const data = await callGeminiAI(aiUrl.split(',')[1], `分析每一副穿戴甲。風格：${uploadStyle}。已知：${JSON.stringify(inventory.map(i => ({ id: i.id, name: i.name })))}。回傳：{"items": [{"matchedId": "ID或null", "detectedSize": "M", "styleName": "品名", "description": "符合風格的50字吸引人文案", "shape": "甲型", "hashtags": "#標籤1 #標籤2"}]}`);
+          const data = await callGeminiAI(aiUrl.split(',')[1], `分析照片。風格：${uploadStyle}。參考現有：${JSON.stringify(inventory.map(i => ({ id: i.id, name: i.name })))}。回傳：{"items": [{"matchedId": "ID或null", "detectedSize": "M", "styleName": "品名", "description": "100字符合風格描述", "shape": "甲型", "hashtags": "#美甲 #高級感"}]}`);
           if (data && data.items) {
             setDrafts(data.items.map((it, i) => {
               const matched = it.matchedId ? inventory.find(inv => inv.id === it.matchedId) : null;
@@ -221,30 +223,28 @@
              });
           }
         });
-        await batch.commit(); setDrafts([]); setActiveTab('inventory'); showToast("建檔成功！");
+        await batch.commit(); setDrafts([]); setActiveTab('inventory'); showToast("同步完成！");
       };
 
       if (!user) return (
-        <div className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
-          <div className="bg-white p-12 rounded-[50px] shadow-2xl text-center max-w-sm w-full border border-gray-100 animate-fade-in-up">
-            <div className="text-6xl mb-6">💅</div>
-            <h1 className="text-2xl font-black mb-2 tracking-tighter">MyNail 雲端建檔</h1>
-            <p className="text-gray-400 text-xs mb-10 font-bold uppercase tracking-[0.2em]">Management Center</p>
-            <button onClick={() => auth.signInWithPopup(new firebase.auth.GoogleAuthProvider())} className="w-full bg-black text-white py-5 rounded-[24px] font-black shadow-xl active:scale-95 transition-all">🌐 Google 登入系統</button>
+        <div className="min-h-screen flex items-center justify-center bg-[#F2F2F7] p-6">
+          <div className="bg-white p-14 rounded-[56px] shadow-2xl text-center max-w-sm w-full border border-gray-100 animate-fade-in-up">
+            <div className="text-7xl mb-6">💅</div>
+            <h1 className="text-3xl font-black mb-2 tracking-tight">雲端美甲後台</h1>
+            <p className="text-gray-400 text-xs mb-10 font-bold uppercase tracking-[0.3em]">Management Suite</p>
+            <button onClick={() => auth.signInWithPopup(new firebase.auth.GoogleAuthProvider())} className="w-full bg-black text-white py-6 rounded-[28px] font-black shadow-xl active:scale-95 transition-all">Google 快速登入</button>
           </div>
         </div>
       );
 
       return (
-        <div className="pb-32 relative min-h-screen">
+        <div className="pb-36 relative min-h-screen">
           {toastMsg && <Toast message={toastMsg.message} type={toastMsg.type} onClose={() => setToastMsg(null)} />}
           
           <input type="file" accept="image/*" capture="environment" ref={cameraInputRef} onChange={handleBatchCreationUpload} className="hidden" />
           <input type="file" accept="image/*" ref={galleryInputRef} onChange={handleBatchCreationUpload} className="hidden" />
           <input type="file" accept="image/*" capture="environment" ref={scanCameraRef} onChange={handleBatchScanUpload} className="hidden" />
           <input type="file" accept="image/*" ref={scanGalleryRef} onChange={handleBatchScanUpload} className="hidden" />
-          
-          {/* ✏️ 編輯專用隱藏 Input */}
           <input type="file" accept="image/*,video/*" multiple ref={editFileInputRef} onChange={async (e) => {
              const files = e.target.files; if(!files.length) return;
              const newMedia = await Promise.all(Array.from(files).map(async f => {
@@ -254,22 +254,24 @@
              setEditingItem(prev => ({ ...prev, media: [...(prev.media||[]), ...newMedia] }));
           }} className="hidden" />
 
-          <header className="bg-white/90 backdrop-blur-md sticky top-0 z-30 px-6 py-5 flex justify-between items-center border-b border-gray-50">
-            <h1 className="font-black text-2xl tracking-tighter">MyNail. <span className="text-gray-300">ADMIN</span></h1>
-            <button onClick={() => auth.signOut()} className="text-[10px] font-black text-gray-400 bg-gray-100 px-3 py-1 rounded-full">LOGOUT</button>
+          <header className="glass-effect sticky top-0 z-30 px-8 py-6 flex justify-between items-center border-b border-gray-100">
+            <h1 className="font-black text-2xl tracking-tighter">MyNail. <span className="text-gray-300 font-medium">Cloud</span></h1>
+            <button onClick={() => auth.signOut()} className="text-[10px] font-black text-gray-400 hover:text-red-500 transition-colors">LOGOUT</button>
           </header>
 
-          <main className="max-w-6xl mx-auto p-4 animate-fade-in-up">
+          <main className="max-w-7xl mx-auto p-4 animate-fade-in-up">
             {activeTab === 'inventory' && (
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-5">
                 {isLoadingDB ? (
-                   <div className="col-span-full py-20 text-center font-black text-gray-200">LOADING...</div>
+                   <div className="col-span-full py-40 text-center font-black text-gray-200 text-3xl">LOADING...</div>
                 ) : inventory.map(item => (
-                  <div key={item.id} onClick={() => setEditingItem(JSON.parse(JSON.stringify(item)))} className="bg-white rounded-[40px] p-3 shadow-sm border border-gray-100 active:scale-95 transition-transform">
-                    <img src={item.media?.[0]?.url} className="w-full aspect-[4/5] object-cover rounded-[32px] mb-3 bg-gray-50" />
-                    <h3 className="font-black text-sm px-2 truncate mb-2">{item.name}</h3>
-                    <div className="flex gap-1 px-1">
-                       {['XS','S','M','L'].map(s => <div key={s} className={`flex-1 text-[9px] text-center rounded-lg py-1 font-black ${item.stock?.[s]>0?'bg-black text-white':'bg-gray-50 text-gray-300'}`}>{item.stock?.[s]||0}</div>)}
+                  <div key={item.id} onClick={() => setEditingItem(JSON.parse(JSON.stringify(item)))} className="bg-white rounded-[44px] p-3 shadow-sm border border-gray-100 active:scale-95 transition-all hover:shadow-xl">
+                    <div className="aspect-[4/5] rounded-[34px] overflow-hidden mb-4 bg-gray-50">
+                       <img src={item.media?.[0]?.url} className="w-full h-full object-cover" />
+                    </div>
+                    <h3 className="font-black text-base px-3 truncate mb-3">{item.name}</h3>
+                    <div className="flex gap-1.5 px-2">
+                       {['XS','S','M','L'].map(s => <div key={s} className={`flex-1 text-[10px] text-center rounded-xl py-2 font-black ${item.stock?.[s]>0?'bg-black text-white':'bg-gray-100 text-gray-300'}`}>{item.stock?.[s]||0}</div>)}
                     </div>
                   </div>
                 ))}
@@ -277,23 +279,23 @@
             )}
 
             {activeTab === 'scan' && (
-              <div className="max-w-md mx-auto space-y-6">
-                <div className="bg-white p-12 rounded-[50px] border-2 border-dashed border-gray-200 text-center shadow-sm">
-                  <div className="text-6xl mb-6">🔍</div>
-                  <h2 className="text-2xl font-black mb-2">智慧批次盤點</h2>
-                  <p className="text-gray-400 text-sm mb-10 font-bold">對著 3x3 九宮格拍攝，AI 自動更新</p>
-                  <div className="flex flex-col gap-3">
-                    <button disabled={isStockTaking} onClick={() => scanCameraRef.current.click()} className="w-full bg-blue-600 text-white py-5 rounded-[24px] font-black text-lg shadow-xl active:scale-95 disabled:opacity-50">📸 開啟相機</button>
-                    <button disabled={isStockTaking} onClick={() => scanGalleryRef.current.click()} className="w-full bg-white text-blue-600 border-2 border-blue-600 py-5 rounded-[24px] font-black text-lg active:scale-95">🖼️ 相簿選取</button>
+              <div className="max-w-md mx-auto py-10 space-y-6">
+                <div className="bg-white p-14 rounded-[60px] border-2 border-dashed border-gray-200 text-center shadow-sm">
+                  <div className="text-7xl mb-6">🔍</div>
+                  <h2 className="text-2xl font-black mb-3">AI 智慧盤點</h2>
+                  <p className="text-gray-400 text-sm mb-12 font-bold leading-relaxed">拍攝 3x3 盤點盒，<br/>AI 將自動比對雲端庫存</p>
+                  <div className="flex flex-col gap-4">
+                    <button disabled={isStockTaking} onClick={() => scanCameraRef.current.click()} className="w-full bg-blue-600 text-white py-6 rounded-[28px] font-black text-xl shadow-2xl active:scale-95 disabled:opacity-50">📸 開啟盤點相機</button>
+                    <button disabled={isStockTaking} onClick={() => scanGalleryRef.current.click()} className="w-full bg-white text-blue-600 border-2 border-blue-600 py-5 rounded-[28px] font-black text-lg active:scale-95">🖼️ 從相簿匯入</button>
                   </div>
                 </div>
                 {scanLogs.length > 0 && (
-                   <div className="bg-white rounded-[40px] p-6 border shadow-sm">
-                      <div className="flex justify-between items-center mb-5">
-                        <h3 className="font-black">📊 最近偵測</h3>
-                        <button onClick={() => setShowCompareModal(true)} className="bg-pink-500 text-white text-xs font-black px-4 py-2 rounded-full animate-pulse">核對庫存</button>
+                   <div className="bg-white rounded-[40px] p-8 border shadow-sm">
+                      <div className="flex justify-between items-center mb-6">
+                        <h3 className="font-black text-xl">盤點偵測日誌</h3>
+                        <button onClick={() => setShowCompareModal(true)} className="bg-pink-500 text-white text-xs font-black px-5 py-2.5 rounded-full animate-pulse">核對並儲存</button>
                       </div>
-                      <div className="max-h-60 overflow-y-auto space-y-2 hide-scrollbar">
+                      <div className="max-h-72 overflow-y-auto space-y-3 hide-scrollbar">
                         {scanLogs.map((log, i) => <div key={i} className="text-xs font-bold text-gray-500 bg-gray-50 p-4 rounded-2xl">{log}</div>)}
                       </div>
                    </div>
@@ -302,104 +304,113 @@
             )}
 
             {activeTab === 'upload' && (
-              <div className="max-w-xl mx-auto">
+              <div className="max-w-xl mx-auto py-8">
                 {isScanning ? (
-                  <div className="text-center py-24 animate-pulse">
-                    <div className="text-6xl mb-4">🧠</div>
-                    <div className="font-black text-2xl">AI 分析細節中...</div>
+                  <div className="text-center py-32 animate-pulse">
+                    <div className="text-7xl mb-6">🧠</div>
+                    <div className="font-black text-3xl tracking-tight">AI 掃描建檔中...</div>
                   </div>
                 ) : drafts.length === 0 ? (
-                  <div className="text-center py-12 bg-white rounded-[50px] border-2 border-dashed border-gray-200 p-12 shadow-sm">
-                    <div className="text-6xl mb-6">✨</div>
-                    <h2 className="text-3xl font-black mb-10 text-black">AI 批次建檔</h2>
-                    <div className="mb-10">
-                      <label className="block text-[10px] font-black text-gray-400 mb-2 uppercase tracking-widest text-center">生成文案風格</label>
-                      <select value={uploadStyle} onChange={(e) => setUploadStyle(e.target.value)} className="w-full bg-gray-50 border-none rounded-[20px] p-4 font-black text-pink-500 text-center outline-none">
+                  <div className="text-center bg-white rounded-[60px] border-2 border-dashed border-gray-200 p-16 shadow-sm">
+                    <div className="text-7xl mb-8">✨</div>
+                    <h2 className="text-3xl font-black mb-10">AI 批次建檔</h2>
+                    <div className="mb-12">
+                      <label className="block text-[11px] font-black text-gray-400 mb-3 uppercase tracking-[0.2em] text-center">文案生成靈魂風格</label>
+                      <select value={uploadStyle} onChange={(e) => setUploadStyle(e.target.value)} className="w-full bg-gray-50 border-none rounded-[24px] p-5 font-black text-pink-500 text-center outline-none shadow-inner">
                         {COPYWRITING_STYLES.map(s => <option key={s} value={s}>{s}</option>)}
                       </select>
                     </div>
-                    <div className="flex flex-col gap-3">
-                      <button onClick={() => cameraInputRef.current.click()} className="w-full bg-black text-white py-5 rounded-[24px] font-black text-xl shadow-2xl active:scale-95">📸 拍照建檔</button>
-                      <button onClick={() => galleryInputRef.current.click()} className="w-full bg-white text-black border-2 border-black py-5 rounded-[24px] font-black text-lg active:scale-95">🖼️ 相簿照片</button>
+                    <div className="flex flex-col gap-4">
+                      <button onClick={() => cameraInputRef.current.click()} className="w-full bg-black text-white py-6 rounded-[28px] font-black text-2xl shadow-2xl active:scale-95">📸 拍照批次建檔</button>
+                      <button onClick={() => galleryInputRef.current.click()} className="w-full bg-white text-black border-2 border-black py-5 rounded-[28px] font-black text-lg active:scale-95">🖼️ 從相簿選取照片</button>
                     </div>
                   </div>
                 ) : (
-                  <div className="space-y-6 pb-12">
-                    <div className="flex justify-between items-center bg-black text-white p-6 rounded-[32px]">
-                       <div className="font-black">✅ 偵測到 {drafts.length} 款式</div>
-                       <button onClick={() => setDrafts([])} className="text-xs bg-white/20 px-4 py-2 rounded-full">重設</button>
+                  <div className="space-y-6 pb-20">
+                    <div className="flex justify-between items-center bg-black text-white p-6 rounded-[32px] shadow-2xl">
+                       <div className="font-black text-lg">✅ 偵測到 {drafts.length} 副指甲</div>
+                       <button onClick={() => setDrafts([])} className="text-xs bg-white/20 px-5 py-2 rounded-full font-black uppercase">Reset</button>
                     </div>
                     {drafts.map(d => (
-                      <div key={d.uid} className="bg-white p-6 rounded-[40px] border-2 border-gray-50 shadow-sm space-y-4">
-                        <input value={d.formData.name} onChange={e => setDrafts(drafts.map(it => it.uid===d.uid?{...it, formData:{...it.formData, name: e.target.value}}:it))} className="w-full font-black text-xl outline-none border-b border-gray-100 pb-2" />
-                        <div className="text-[10px] font-black text-blue-500 tracking-wider uppercase">{d.isMatch ? 'Match: Existing Style' : 'New: Create Record'}</div>
-                        <textarea value={d.formData.description} onChange={e => setDrafts(drafts.map(it => it.uid===d.uid?{...it, formData:{...it.formData, description: e.target.value}}:it))} className="w-full text-xs bg-gray-50 p-4 rounded-2xl h-24 outline-none border-none text-gray-500 font-bold leading-relaxed" />
-                        <div className="flex flex-wrap gap-2">
-                           <input placeholder="#標籤" value={d.formData.hashtags} onChange={e => setDrafts(drafts.map(it => it.uid===d.uid?{...it, formData:{...it.formData, hashtags: e.target.value}}:it))} className="flex-1 text-[10px] font-black bg-pink-50 text-pink-500 p-4 rounded-2xl outline-none border-none shadow-inner" />
-                           <div className="bg-black text-white px-5 py-4 rounded-2xl text-[10px] font-black flex items-center">SIZE: {d.formData.detectedSize}</div>
+                      <div key={d.uid} className="bg-white p-8 rounded-[48px] border-2 border-gray-50 shadow-xl space-y-5">
+                        <input value={d.formData.name} onChange={e => setDrafts(drafts.map(it => it.uid===d.uid?{...it, formData:{...it.formData, name: e.target.value}}:it))} className="w-full font-black text-2xl outline-none border-b border-gray-100 pb-3" />
+                        <div className="text-[11px] font-black text-blue-500 tracking-wider uppercase flex items-center gap-2">
+                           <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                           {d.isMatch ? 'EXISTING STYLE: AUTO-STOCK' : 'NEW ARRIVAL: CREATE FILE'}
+                        </div>
+                        <textarea value={d.formData.description} onChange={e => setDrafts(drafts.map(it => it.uid===d.uid?{...it, formData:{...it.formData, description: e.target.value}}:it))} className="w-full text-sm bg-gray-50 p-5 rounded-[24px] h-32 outline-none border-none text-gray-500 font-bold leading-relaxed" />
+                        <div className="flex flex-wrap gap-3">
+                           <input placeholder="#標籤" value={d.formData.hashtags} onChange={e => setDrafts(drafts.map(it => it.uid===d.uid?{...it, formData:{...it.formData, hashtags: e.target.value}}:it))} className="flex-1 text-xs font-black bg-pink-50 text-pink-500 p-5 rounded-[20px] outline-none border-none shadow-inner" />
+                           <div className="bg-black text-white px-6 py-5 rounded-[20px] text-xs font-black flex items-center uppercase">SIZE: {d.formData.detectedSize}</div>
                         </div>
                       </div>
                     ))}
-                    <button onClick={handleSaveAllDrafts} className="w-full bg-black text-white py-6 rounded-[30px] font-black text-xl shadow-2xl active:scale-95 transition-all">確認無誤，存入雲端 🚀</button>
+                    <button onClick={handleSaveAllDrafts} className="w-full bg-black text-white py-7 rounded-[32px] font-black text-2xl shadow-2xl active:scale-95 transition-all">確認無誤，存入雲端數據 🚀</button>
                   </div>
                 )}
               </div>
             )}
 
             {activeTab === 'export' && (
-              <div className="max-w-md mx-auto bg-white p-16 rounded-[50px] shadow-sm text-center border">
-                 <div className="text-7xl mb-10">📊</div>
-                 <h2 className="text-2xl font-black mb-12 tracking-tight">匯出雲端全清單</h2>
+              <div className="max-w-md mx-auto py-10 bg-white p-20 rounded-[64px] shadow-sm text-center border">
+                 <div className="text-8xl mb-12">📊</div>
+                 <h2 className="text-3xl font-black mb-16 tracking-tight">全庫存數據匯出</h2>
                  <button onClick={() => {
-                    const content = ['編號,名稱,甲型,標籤,XS,S,M,L', ...inventory.map(i => [i.id, i.name, i.shape, i.hashtags, i.stock.XS, i.stock.S, i.stock.M, i.stock.L].join(','))].join('\n');
+                    const content = ['編號,名稱,甲型,描述,標籤,XS,S,M,L', ...inventory.map(i => [i.id, i.name, i.shape, i.description?.replace(/,/g,' '), i.hashtags, i.stock.XS, i.stock.S, i.stock.M, i.stock.L].join(','))].join('\n');
                     const blob = new Blob(['\ufeff' + content], { type: 'text/csv;charset=utf-8;' });
-                    const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `Inventory_${new Date().toISOString().split('T')[0]}.csv`; link.click();
-                 }} className="bg-black text-white py-6 rounded-[24px] font-black w-full shadow-2xl active:scale-95 transition-all">⬇️ 下載 CSV 數據</button>
+                    const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `MyNail_Inventory_${new Date().toISOString().split('T')[0]}.csv`; link.click();
+                 }} className="bg-black text-white py-6 rounded-[28px] font-black w-full shadow-2xl active:scale-95 transition-all">⬇️ 點此下載 CSV 檔</button>
               </div>
             )}
           </main>
 
-          {/* ✏️ 功能全修復：完整版編輯視窗 */}
+          {/* ✏️ 完整版編輯視窗：恢復所有功能 */}
           {editingItem && (
-            <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-md flex items-center justify-center p-4">
-               <div className="bg-white rounded-[50px] p-8 w-full max-w-xl max-h-[90vh] overflow-y-auto hide-scrollbar animate-fade-in-up">
-                  <div className="flex justify-between items-center mb-8"><h2 className="font-black text-2xl">編輯款式細節</h2><button onClick={() => setEditingItem(null)} className="p-3 bg-gray-50 rounded-full">✕</button></div>
-                  <div className="space-y-8">
+            <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xl flex items-center justify-center p-4">
+               <div className="bg-white rounded-[60px] p-10 w-full max-w-2xl max-h-[92vh] overflow-y-auto hide-scrollbar animate-fade-in-up">
+                  <div className="flex justify-between items-center mb-10">
+                     <h2 className="font-black text-3xl tracking-tight">編輯款式詳情</h2>
+                     <button onClick={() => setEditingItem(null)} className="p-4 bg-gray-50 rounded-full hover:bg-gray-100">✕</button>
+                  </div>
+                  <div className="space-y-10">
                      <div>
-                        <div className="flex justify-between items-center mb-4">
-                          <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">媒體管理 (相片與影片)</label>
-                          <button onClick={() => editFileInputRef.current.click()} className="text-[10px] bg-black text-white px-5 py-2 rounded-full font-black">＋ 增加媒體</button>
+                        <div className="flex justify-between items-end mb-5">
+                          <div>
+                             <label className="text-[11px] font-black text-gray-400 uppercase tracking-widest block mb-1">MEDIA GALLERY</label>
+                             <h4 className="font-bold text-sm">相片與影片管理</h4>
+                          </div>
+                          <button onClick={() => editFileInputRef.current.click()} className="text-[11px] bg-black text-white px-6 py-2.5 rounded-full font-black shadow-lg">＋ 增加媒體</button>
                         </div>
-                        <div className="grid grid-cols-4 gap-3">
+                        <div className="grid grid-cols-4 gap-4">
                            {editingItem.media?.map((m, i) => (
-                             <div key={m.id} className="aspect-square relative group rounded-[20px] overflow-hidden border border-gray-100 bg-gray-50">
-                               {m.type === 'image' ? <img src={m.url} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-xs">📹</div>}
-                               <button onClick={() => setEditingItem({...editingItem, media: editingItem.media.filter((_, idx)=>idx!==i)})} className="absolute top-1 right-1 bg-red-500 text-white p-1.5 rounded-lg text-[10px] font-bold shadow-lg">✕</button>
+                             <div key={m.id} className="aspect-[3/4] relative group rounded-[28px] overflow-hidden border border-gray-100 bg-gray-50 shadow-inner">
+                               {m.type === 'image' ? <img src={m.url} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-2xl bg-gray-100">📹</div>}
+                               <button onClick={() => setEditingItem({...editingItem, media: editingItem.media.filter((_, idx)=>idx!==i)})} className="absolute top-2 right-2 bg-red-500 text-white p-2 rounded-xl text-[12px] font-bold shadow-2xl opacity-0 group-hover:opacity-100 transition-opacity">✕</button>
                              </div>
                            ))}
                         </div>
                      </div>
-                     <div className="grid grid-cols-2 gap-4">
-                        <div><label className="block text-[10px] font-black text-gray-400 mb-2 uppercase">品名</label><input value={editingItem.name} onChange={e => setEditingItem({...editingItem, name:e.target.value})} className="w-full p-4 bg-gray-50 rounded-2xl font-black outline-none border-none" /></div>
-                        <div><label className="block text-[10px] font-black text-gray-400 mb-2 uppercase">甲型</label><select value={editingItem.shape} onChange={e => setEditingItem({...editingItem, shape:e.target.value})} className="w-full p-4 bg-gray-50 rounded-2xl font-black outline-none border-none">{NAIL_SHAPES.map(s => <option key={s} value={s}>{s}</option>)}</select></div>
+                     <div className="grid grid-cols-2 gap-6">
+                        <div><label className="block text-[11px] font-black text-gray-400 mb-2 uppercase tracking-wider">品名</label><input value={editingItem.name} onChange={e => setEditingItem({...editingItem, name:e.target.value})} className="w-full p-5 bg-gray-50 rounded-[24px] font-black text-lg outline-none border-none shadow-inner focus:ring-2 ring-black" /></div>
+                        <div><label className="block text-[11px] font-black text-gray-400 mb-2 uppercase tracking-wider">甲型</label><select value={editingItem.shape} onChange={e => setEditingItem({...editingItem, shape:e.target.value})} className="w-full p-5 bg-gray-50 rounded-[24px] font-black text-lg outline-none border-none shadow-inner focus:ring-2 ring-black">{NAIL_SHAPES.map(s => <option key={s} value={s}>{s}</option>)}</select></div>
                      </div>
                      <div>
-                        <label className="block text-[10px] font-black text-gray-400 mb-2 uppercase tracking-wide">款式描述文案 (多風格支持)</label>
-                        <textarea value={editingItem.description} onChange={e => setEditingItem({...editingItem, description:e.target.value})} className="w-full p-4 bg-gray-50 rounded-2xl font-bold text-sm h-32 outline-none border-none leading-relaxed" />
+                        <label className="block text-[11px] font-black text-gray-400 mb-2 uppercase tracking-wider">多風格款式描述文案</label>
+                        <textarea value={editingItem.description} onChange={e => setEditingItem({...editingItem, description:e.target.value})} className="w-full p-6 bg-gray-50 rounded-[30px] font-bold text-sm h-40 outline-none border-none shadow-inner leading-relaxed focus:ring-2 ring-black" />
                      </div>
                      <div>
-                        <label className="block text-[10px] font-black text-gray-400 mb-2 uppercase tracking-wide">自定義標籤 (#)</label>
-                        <input value={editingItem.hashtags} onChange={e => setEditingItem({...editingItem, hashtags:e.target.value})} placeholder="#氣質 #法式" className="w-full p-4 bg-pink-50 rounded-2xl font-black text-pink-500 outline-none border-none" />
+                        <label className="block text-[11px] font-black text-gray-400 mb-2 uppercase tracking-wider">自定義標籤 (#)</label>
+                        <input value={editingItem.hashtags} onChange={e => setEditingItem({...editingItem, hashtags:e.target.value})} placeholder="#法式 #優雅 #夏季限定" className="w-full p-5 bg-pink-50 rounded-[24px] font-black text-pink-500 outline-none border-none shadow-inner focus:ring-2 ring-pink-300" />
                      </div>
                      <div>
-                        <label className="block text-[10px] font-black text-gray-400 mb-4 uppercase">庫存管理 (件)</label>
-                        <div className="grid grid-cols-4 gap-3">
-                           {['XS','S','M','L'].map(s => <div key={s} className="text-center"><div className="text-[10px] font-black text-gray-400 mb-2 uppercase">{s}</div><input type="number" value={editingItem.stock[s]} onChange={e => setEditingItem({...editingItem, stock:{...editingItem.stock, [s]:parseInt(e.target.value)||0}})} className="w-full text-center border-none bg-gray-50 p-4 rounded-2xl font-black outline-none focus:ring-2 ring-black" /></div>)}
+                        <label className="block text-[11px] font-black text-gray-400 mb-5 uppercase tracking-[0.2em] text-center">庫存管理 (各尺寸數量)</label>
+                        <div className="grid grid-cols-4 gap-4">
+                           {['XS','S','M','L'].map(s => <div key={s} className="text-center"><div className="text-[11px] font-black text-gray-400 mb-2 uppercase font-mono">{s}</div><input type="number" value={editingItem.stock[s]} onChange={e => setEditingItem({...editingItem, stock:{...editingItem.stock, [s]:parseInt(e.target.value)||0}})} className="w-full text-center border-none bg-gray-50 p-5 rounded-[24px] font-black text-xl shadow-inner focus:ring-2 ring-black" /></div>)}
                         </div>
                      </div>
-                     <div className="flex gap-4 pt-8">
-                        <button onClick={async () => {if(window.confirm("確定刪除此商品？")) { await db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('inventory').doc(editingItem.id).delete(); setEditingItem(null); showToast("已從雲端移除"); }}} className="flex-1 bg-red-50 text-red-500 py-5 rounded-[24px] font-black">刪除商品</button>
-                        <button onClick={async () => { await db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('inventory').doc(editingItem.id).update(editingItem); setEditingItem(null); showToast("修改已儲存 💾"); }} className="flex-[2] bg-black text-white py-5 rounded-[24px] font-black shadow-2xl active:scale-95 transition-all">儲存所有修改</button>
+                     <div className="flex gap-5 pt-10 border-t border-gray-50">
+                        <button onClick={async () => {if(window.confirm("確定從雲端刪除此商品？")) { await db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('inventory').doc(editingItem.id).delete(); setEditingItem(null); showToast("已永久移除"); }}} className="flex-1 bg-red-50 text-red-500 py-6 rounded-[30px] font-black tracking-tight">刪除商品</button>
+                        <button onClick={async () => { await db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('inventory').doc(editingItem.id).update(editingItem); setEditingItem(null); showToast("修改已儲存 💾"); }} className="flex-[2] bg-black text-white py-6 rounded-[30px] font-black text-xl shadow-2xl active:scale-95 transition-all">更新雲端檔案</button>
                      </div>
                   </div>
                </div>
@@ -408,16 +419,16 @@
 
           {/* 📊 盤點核對彈窗 */}
           {showCompareModal && (
-             <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-md flex items-center justify-center p-4">
-                <div className="bg-white rounded-[50px] p-8 w-full max-w-lg max-h-[85vh] overflow-y-auto hide-scrollbar animate-fade-in-up shadow-2xl">
-                   <div className="flex justify-between items-center mb-6"><h2 className="font-black text-2xl tracking-tighter">📋 盤點核對單</h2><button onClick={() => setShowCompareModal(false)} className="p-3 bg-gray-50 rounded-full">✕</button></div>
-                   <div className="space-y-3 mb-8">
-                      {Object.keys(scanSession).length === 0 ? <p className="text-center text-gray-300 font-bold py-10">尚無盤點數據</p> : Object.entries(scanSession).map(([id, sizes]) => {
+             <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xl flex items-center justify-center p-4">
+                <div className="bg-white rounded-[60px] p-10 w-full max-w-xl max-h-[85vh] overflow-y-auto hide-scrollbar animate-fade-in-up">
+                   <div className="flex justify-between items-center mb-8"><h2 className="font-black text-2xl">📋 盤點核對確認</h2><button onClick={() => setShowCompareModal(false)} className="p-4 bg-gray-50 rounded-full">✕</button></div>
+                   <div className="space-y-4 mb-10">
+                      {Object.keys(scanSession).length === 0 ? <p className="text-center text-gray-300 font-bold py-16 text-lg">尚未偵測到任何款式</p> : Object.entries(scanSession).map(([id, sizes]) => {
                         const item = inventory.find(i => i.id === id);
                         return item ? Object.entries(sizes).map(([s, c]) => (
-                          <div key={id+s} className="flex justify-between items-center p-5 bg-gray-50 rounded-[24px] border border-gray-100">
-                             <div className="font-black text-sm">{item.name} <span className="text-pink-500 ml-1">({s})</span></div>
-                             <div className="font-black text-xs text-gray-400">系統 {item.stock[s]||0} → <span className="text-blue-600 text-lg">{c}</span></div>
+                          <div key={id+s} className="flex justify-between items-center p-6 bg-gray-50 rounded-[30px] border border-gray-100 shadow-inner">
+                             <div className="font-black text-base">{item.name} <span className="text-xs text-pink-500 ml-1 font-mono tracking-widest">({s})</span></div>
+                             <div className="font-black text-sm text-gray-400 uppercase tracking-tighter">System {item.stock[s]||0} → <span className="text-blue-600 text-2xl font-mono ml-2">{c}</span></div>
                           </div>
                         )) : null;
                       })}
@@ -432,28 +443,28 @@
                            batch.update(db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('inventory').doc(id), { stock: nS });
                         }
                       }
-                      await batch.commit(); setScanSession({}); setScanLogs([]); setShowCompareModal(false); showToast("雲端庫存已同步！");
-                   }} className="w-full bg-black text-white py-6 rounded-[24px] font-black shadow-2xl active:scale-95 transition-all">確認無誤並覆蓋數據 💾</button>
+                      await batch.commit(); setScanSession({}); setScanLogs([]); setShowCompareModal(false); showToast("庫存同步成功！");
+                   }} className="w-full bg-black text-white py-7 rounded-[32px] font-black text-xl shadow-2xl active:scale-95 transition-all">確認並覆蓋雲端庫存 💾</button>
                 </div>
              </div>
           )}
 
           {/* 底部導覽列 */}
-          <nav className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-xl border-t border-gray-50 pb-safe z-40 flex justify-around items-end px-4">
-            <button onClick={() => setActiveTab('inventory')} className={`flex-1 pb-4 pt-5 flex flex-col items-center gap-1 transition-all ${activeTab === 'inventory' ? 'text-black scale-110' : 'text-gray-300'}`}>
-              <span className="text-2xl">📦</span><span className="text-[9px] font-black uppercase tracking-tighter">Inventory</span>
+          <nav className="fixed bottom-0 left-0 right-0 glass-effect border-t border-gray-100 pb-safe z-40 flex justify-around items-end px-6 h-28">
+            <button onClick={() => setActiveTab('inventory')} className={`flex-1 pb-6 pt-5 flex flex-col items-center gap-1.5 transition-all ${activeTab === 'inventory' ? 'text-black scale-110' : 'text-gray-300'}`}>
+              <span className="text-3xl">📦</span><span className="text-[10px] font-black uppercase tracking-widest">Store</span>
             </button>
-            <button onClick={() => setActiveTab('scan')} className={`flex-1 pb-4 pt-5 flex flex-col items-center gap-1 transition-all ${activeTab === 'scan' ? 'text-black scale-110' : 'text-gray-300'}`}>
-              <span className="text-2xl">🔍</span><span className="text-[9px] font-black uppercase tracking-tighter">Stocktake</span>
+            <button onClick={() => setActiveTab('scan')} className={`flex-1 pb-6 pt-5 flex flex-col items-center gap-1.5 transition-all ${activeTab === 'scan' ? 'text-black scale-110' : 'text-gray-300'}`}>
+              <span className="text-3xl">🔍</span><span className="text-[10px] font-black uppercase tracking-widest">Scan</span>
             </button>
-            <button onClick={() => setActiveTab('upload')} className="relative flex flex-col items-center justify-center -top-8 w-[80px]">
-              <div className={`w-16 h-16 rounded-[24px] flex items-center justify-center text-white shadow-xl transition-all ${activeTab === 'upload' ? 'bg-pink-500 scale-110' : 'bg-black'}`}>
-                <span className="text-4xl font-light">＋</span>
+            <button onClick={() => setActiveTab('upload')} className="relative flex flex-col items-center justify-center -top-10 w-24">
+              <div className={`w-20 h-20 rounded-[32px] flex items-center justify-center text-white shadow-2xl transition-all ${activeTab === 'upload' ? 'bg-pink-500 scale-110' : 'bg-black'}`}>
+                <span className="text-5xl font-light">＋</span>
               </div>
-              <span className={`text-[9px] font-black mt-3 uppercase tracking-tighter ${activeTab === 'upload' ? 'text-pink-500' : 'text-gray-400'}`}>Create</span>
+              <span className={`text-[10px] font-black mt-4 uppercase tracking-widest ${activeTab === 'upload' ? 'text-pink-500' : 'text-gray-400'}`}>Add</span>
             </button>
-            <button onClick={() => setActiveTab('export')} className={`flex-1 pb-4 pt-5 flex flex-col items-center gap-1 transition-all ${activeTab === 'export' ? 'text-black scale-110' : 'text-gray-300'}`}>
-              <span className="text-2xl">📊</span><span className="text-[9px] font-black uppercase tracking-tighter">Report</span>
+            <button onClick={() => setActiveTab('export')} className={`flex-1 pb-6 pt-5 flex flex-col items-center gap-1.5 transition-all ${activeTab === 'export' ? 'text-black scale-110' : 'text-gray-300'}`}>
+              <span className="text-3xl">📊</span><span className="text-[10px] font-black uppercase tracking-widest">CSV</span>
             </button>
           </nav>
         </div>
