@@ -119,7 +119,6 @@
       // ✨ 更穩定的 AI 呼叫邏輯
       const callGeminiAI = async (base64Data, promptText) => {
         try {
-          // 使用 v1beta 搭配穩定的請求結構
           const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
           const res = await fetch(url, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -130,7 +129,10 @@
               generationConfig: { response_mime_type: "application/json" }
             })
           });
-          const jsonRes = await result = await res.json();
+          
+          // ✨ 修正語法錯誤：移除重複的賦值 await result =
+          const jsonRes = await res.json();
+          
           if (jsonRes.error) throw new Error(jsonRes.error.message);
           const text = jsonRes.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
           const cleanText = text.replace(/```json/g, '').replace(/```/g, '').trim();
@@ -270,7 +272,7 @@
               </div>
             )}
 
-            {/* 盤點頁面 (強力回歸) */}
+            {/* 盤點頁面 */}
             {activeTab === 'scan' && (
               <div className="max-w-md mx-auto space-y-6">
                 <div className="bg-white p-10 rounded-[45px] border-2 border-dashed border-gray-100 text-center shadow-sm">
@@ -365,7 +367,7 @@
              </div>
           )}
 
-          {/* 底部導覽 (強力回歸 3 分頁版) */}
+          {/* 底部導覽 */}
           <nav className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-xl border-t border-gray-100 pb-safe z-10 flex justify-around items-end px-4 text-center">
             <button onClick={() => setActiveTab('inventory')} className={`flex-1 pb-3 pt-4 flex flex-col items-center gap-1 transition-all ${activeTab === 'inventory' ? 'text-gray-900 scale-110' : 'text-gray-300'}`}>
               <span className="text-2xl">📦</span><span className="text-[10px] font-black">庫存</span>
