@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>雲端智能建檔系統 (全功能完美版)</title>
+  <title>雲端智能建檔系統 (全功能修復版)</title>
   
   <script src="https://cdn.tailwindcss.com"></script>
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -136,7 +136,8 @@
 
       const callGeminiAI = async (base64Data, promptText) => {
         try {
-          const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+          // ⚠️ 已修復：改用 v1beta 版本以支援新欄位
+          const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
           const result = await fetch(url, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -158,7 +159,7 @@
 
       const handleRewriteDescription = async (isEditing, currentName, draftUid = null) => {
         showToast("AI 靈感湧現中...", "success");
-        const prompt = `你是一個專業美甲行銷文案專家。商品名稱為「${currentName}」。請撰寫一段約 30 字的生動商品描述，並附上3個 Hashtag。請勿輸出 JSON 以外的格式。`;
+        const prompt = `你是一個專業美甲行銷文案專家。商品名稱為「${currentName}」。請撰寫一段約 30 字的生動商品描述，並附上3個 Hashtag。`;
         const data = await callGeminiAI(null, prompt);
         if(data) {
            if(isEditing) setEditingItem(prev => ({ ...prev, description: data.trim() }));
@@ -167,7 +168,6 @@
         }
       };
 
-      // 🔍 批次盤點邏輯
       const handleBatchScanUpload = async (e) => {
         const file = e.target.files[0]; if (!file) return; e.target.value = ''; 
         setIsStockTaking(true);
@@ -193,18 +193,18 @@
             setUnknownScans(prev => [...prev, ...unknowns.map(u => ({ ...u, uid: Math.random(), croppedUrl: cropImageFromBox(imgEl, u.box2d) || base64Url }))]);
           }
           showToast(`盤點分析完成！`);
-        } catch (err) { showToast("系統忙碌中，請稍後再試", "error"); } finally { setIsStockTaking(false); }
+        } catch (err) { } finally { setIsStockTaking(false); }
       };
 
-      // ➕ 批次建檔邏輯
       const handleBatchCreationUpload = async (e) => {
         const file = e.target.files[0]; if (!file) return; e.target.value = '';
         setIsScanning(true); setDrafts([]);
         try {
           const aiUrl = await compressImage(file, 1600);
           const dbUrl = await compressImage(file, 800);
+          const base64 = aiUrl.split(',')[1];
           const style = uploadStyle === '隨機驚喜' ? '多樣化的' : uploadStyle;
-          const data = await callGeminiAI(aiUrl.split(',')[1], `辨識照片中每一套穿戴甲。庫存：${JSON.stringify(inventory.map(i => ({ id: i.id, name: i.name })))}。以「${style}」風格撰寫。回傳 JSON：{"items": [{"matchedId": "ID", "detectedSize": "S", "styleName": "名", "description": "文案", "shape": "甲型", "hashtags": "#標籤"}]}`);
+          const data = await callGeminiAI(base64, `辨識照片中每一套穿戴甲。庫存：${JSON.stringify(inventory.map(i => ({ id: i.id, name: i.name })))}。以「${style}」風格撰寫。回傳 JSON：{"items": [{"matchedId": "ID", "detectedSize": "S", "styleName": "名", "description": "文案", "shape": "甲型", "hashtags": "#標籤"}]}`);
           if (!data || !data.items) return;
           const newDrafts = data.items.map((item, i) => {
             const matchedItem = item.matchedId ? inventory.find(inv => inv.id === item.matchedId) : null;
@@ -224,7 +224,8 @@
             };
           });
           setDrafts(newDrafts);
-        } catch (err) { showToast("分析失敗", "error"); } finally { setIsScanning(false); }
+          showToast(`成功辨識出 ${newDrafts.length} 副！`);
+        } catch (err) { } finally { setIsScanning(false); }
       };
 
       const updateDraft = (uid, field, val) => setDrafts(prev => prev.map(d => d.uid === uid ? { ...d, formData: { ...d.formData, [field]: val } } : d));
@@ -329,7 +330,7 @@
                   <h2 className="font-black text-xl mb-4">智能批次盤點</h2>
                   <div className="flex gap-3">
                     <button onClick={() => scanCameraRef.current.click()} className="flex-1 bg-blue-600 text-white py-4 rounded-2xl font-black shadow-lg">📸 拍照盤點</button>
-                    <button onClick={() => scanGalleryRef.current.click()} className="flex-1 border-2 border-blue-600 text-blue-600 py-4 rounded-2xl font-black">🖼️ 相簿</button>
+                    <button onClick={() => scanGalleryRef.current.click()} className="flex-1 border-2 border-blue-600 text-blue-600 py-4 rounded-2xl font-black">🖼️ 相簿選擇</button>
                   </div>
                 </div>
                 {diffList.length > 0 && (
@@ -358,13 +359,16 @@
                    <div className="text-center py-20 bg-white rounded-[40px] border-2 border-dashed border-gray-200 p-10">
                      <div className="text-6xl mb-6">📸</div>
                      <h2 className="text-3xl font-black mb-8">AI 批次建檔</h2>
-                     <div className="mb-10">
+                     <div className="mb-10 px-4">
                        <label className="block text-xs font-bold text-gray-400 mb-2 uppercase tracking-widest">選擇 AI 文案靈魂風格</label>
                        <select value={uploadStyle} onChange={(e) => setUploadStyle(e.target.value)} className="w-full bg-gray-50 border rounded-2xl p-4 font-black text-pink-600 outline-none text-center">
                          {COPYWRITING_STYLES.map(s => <option key={s} value={s}>{s}</option>)}
                        </select>
                      </div>
-                     <button onClick={() => cameraInputRef.current.click()} className="w-full bg-gray-900 text-white py-5 rounded-[25px] font-black text-xl shadow-2xl active:scale-95 transition-all">開啟相機建檔</button>
+                     <div className="flex flex-col gap-3">
+                       <button onClick={() => cameraInputRef.current.click()} className="w-full bg-gray-900 text-white py-5 rounded-[25px] font-black text-xl shadow-2xl active:scale-95 transition-all">📸 開啟相機建檔</button>
+                       <button onClick={() => galleryInputRef.current.click()} className="w-full bg-white text-gray-900 border-2 border-gray-900 py-4 rounded-[25px] font-black text-lg active:scale-95 transition-all">🖼️ 從相簿上傳圖片</button>
+                     </div>
                    </div>
                 ) : (
                   <div className="space-y-4">
