@@ -1,11 +1,8 @@
-const querystring = require('querystring');
-
-exports.handler = async (event) => {
-  if (event.httpMethod !== 'POST') return { statusCode: 405, body: '不允許的方法' };
+module.exports = async (req, res) => {
+  if (req.method !== 'POST') return res.status(405).send('不允許的方法');
   
-  const params = querystring.parse(event.body);
-  const storeName = params.CVSStoreName || '';
-  const storeAddress = params.CVSAddress || '';
+  const storeName = req.body.CVSStoreName || '';
+  const storeAddress = req.body.CVSAddress || '';
   
   const html = `
     <!DOCTYPE html>
@@ -27,5 +24,6 @@ exports.handler = async (event) => {
     </body>
     </html>
   `;
-  return { statusCode: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' }, body: html };
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.status(200).send(html);
 };

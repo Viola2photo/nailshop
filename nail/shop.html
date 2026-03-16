@@ -32,11 +32,9 @@
     const adminUserId = "MvkJo5e1kEcBS0fGGMr4RKdQjYg1"; 
     const appId = 'nail-inventory-app';
 
-    // ⚙️ 商店行銷設定區
     const SHIPPING_FEE = 60;              
     const FREE_SHIPPING_THRESHOLD = 1000; 
     
-    // 優惠碼區 (客人手動輸入的折抵)
     const PROMO_CODES = {
       'VIP9': { type: 'percent', value: 0.9, name: 'VIP 專屬 9 折' },
       'SAVE100': { type: 'minus', value: 100, name: '滿額現折 100 元' },
@@ -131,12 +129,10 @@
       const [promoInput, setPromoInput] = useState('');
       const [appliedPromo, setAppliedPromo] = useState(null);
 
-      // ✨ 表單狀態
       const [customerName, setCustomerName] = useState('');
       const [customerPhone, setCustomerPhone] = useState('');
       const [shippingAddress, setShippingAddress] = useState('');
 
-      // 🌍 監聽電子地圖傳回來的門市資料
       useEffect(() => {
         const handleMessage = (event) => {
           if (event.data && event.data.type === 'ECPAY_MAP_RESULT') {
@@ -182,38 +178,29 @@
         setCart(prev => prev.filter((_, i) => i !== index));
       };
 
-      // ==========================================
-      // 🧮 購物車【開幕活動】與金額計算核心邏輯
-      // ==========================================
       const cartSubtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
       
-      // 1. 開幕活動：任選 4 件 1000 元
       let allPrices = [];
       cart.forEach(item => { for(let i=0; i<item.quantity; i++) allPrices.push(item.price); });
-      // 將價格從高到低排序，把最貴的商品優先排入 4件1000 的組合中，對客人最划算
       allPrices.sort((a, b) => b - a); 
       
-      const bundleCount = Math.floor(allPrices.length / 4); // 算算看購物車有幾組 4 件
+      const bundleCount = Math.floor(allPrices.length / 4);
       let eventDiscountAmount = 0;
       let isEventFreeShipping = false;
       
       if (bundleCount > 0) {
         let originalBundlePrice = 0;
-        // 把組成套裝的商品原價加總起來
         for(let i=0; i < bundleCount * 4; i++) {
           originalBundlePrice += allPrices[i];
         }
-        // 折扣金額 = 原本套裝加總的價格 - (套裝數 * 1000元)
         eventDiscountAmount = originalBundlePrice - (bundleCount * 1000);
-        isEventFreeShipping = true; // 達成活動，觸發免運！
+        isEventFreeShipping = true;
       }
 
-      // 2. 運費計算：如果符合開幕活動，或是滿額，運費就是 0
       const currentShippingFee = (cartSubtotal === 0 || isEventFreeShipping || cartSubtotal >= FREE_SHIPPING_THRESHOLD) ? 0 : SHIPPING_FEE;
       const isFreeShipping = currentShippingFee === 0 && cartSubtotal > 0;
       const amountToFreeShipping = FREE_SHIPPING_THRESHOLD - cartSubtotal;
 
-      // 3. 優惠碼折抵 (以扣除開幕活動後的剩餘金額來打折)
       let promoDiscountAmount = 0;
       const subtotalAfterEvent = cartSubtotal - eventDiscountAmount; 
 
@@ -226,14 +213,11 @@
       }
       if (subtotalAfterEvent - promoDiscountAmount < 0) promoDiscountAmount = subtotalAfterEvent;
 
-      // 4. 最終總結帳金額
       const finalTotal = cartSubtotal - eventDiscountAmount - promoDiscountAmount + currentShippingFee;
-      // ==========================================
 
       const handleApplyPromo = () => {
         const code = promoInput.toUpperCase().trim();
         if (!code) return;
-        
         if (PROMO_CODES[code]) {
           setAppliedPromo({ ...PROMO_CODES[code], code });
           setPromoInput('');
@@ -243,7 +227,7 @@
         }
       };
 
-      // 🗺️ 開啟電子地圖彈窗
+      // ✨ 已為您更新為 Vercel 專用 API 路徑
       const openMap = (type) => {
         window.open(`/api/ecpay_map?type=${type}`, 'ecpayMap', 'width=1000,height=700,scrollbars=yes');
       };
@@ -256,7 +240,6 @@
 
         setIsCheckingOut(true);
         try {
-          // 整理傳遞給綠界的明細
           let itemNamesArr = cart.map(i => `${i.name}(${i.size}) x ${i.quantity}`);
           if (eventDiscountAmount > 0) itemNamesArr.push(`[活動]任4件1000折抵 x 1`);
           if (currentShippingFee > 0) itemNamesArr.push(`物流運費 x 1`);
@@ -264,14 +247,13 @@
           
           const itemNames = itemNamesArr.join('#').substring(0, 390);
 
+          // ✨ 已為您更新為 Vercel 專用 API 路徑
           const response = await fetch('/api/ecpay', {
             method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
-              total: finalTotal, 
-              items: itemNames,
-              name: customerName,
-              phone: customerPhone,
-              address: shippingAddress
+              total: finalTotal, items: itemNames,
+              name: customerName, phone: customerPhone, address: shippingAddress
             }) 
           });
           
@@ -333,7 +315,6 @@
                   <button onClick={() => setIsCartOpen(false)} className="w-8 h-8 flex items-center justify-center bg-gray-200 hover:bg-gray-300 rounded-full transition-colors font-bold text-gray-600">✕</button>
                 </div>
 
-                {/* ✨ 頂部活動進度條更新 */}
                 <div className="bg-pink-50 px-6 py-3 text-sm font-bold text-center border-b border-pink-100">
                   {cartSubtotal === 0 ? (
                     <span className="text-pink-600">🎊 開幕慶：全館任 4 件 1000 元 (享免運)</span>
@@ -373,14 +354,12 @@
                     ))
                   )}
 
-                  {/* 📦 寄件資料與地圖整合區 */}
                   {cart.length > 0 && (
                     <div className="bg-white border-2 border-gray-100 p-4 rounded-2xl shadow-sm mt-4">
                       <h3 className="font-bold text-gray-900 text-base mb-3 border-b pb-2">📦 取貨資訊</h3>
                       <input type="text" placeholder="真實姓名 (取貨核對用)" value={customerName} onChange={e => setCustomerName(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm outline-none mb-3 bg-gray-50 focus:bg-white focus:border-pink-300 transition-colors" />
                       <input type="tel" placeholder="手機號碼" value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm outline-none mb-3 bg-gray-50 focus:bg-white focus:border-pink-300 transition-colors" />
                       
-                      {/* 🗺️ 地圖呼叫按鈕 */}
                       <div className="flex gap-2 mb-3">
                         <button onClick={() => openMap('UNIMARTC2C')} className="flex-1 bg-[#008061] hover:bg-[#00664e] text-white text-xs font-bold py-3 rounded-xl shadow-sm transition-colors">🏪 選擇 7-11 門市</button>
                         <button onClick={() => openMap('FAMIC2C')} className="flex-1 bg-[#00A1E9] hover:bg-[#0082bc] text-white text-xs font-bold py-3 rounded-xl shadow-sm transition-colors">🏪 選擇全家門市</button>
@@ -420,7 +399,6 @@
                       <span>商品小計</span><span>NT$ {cartSubtotal}</span>
                     </div>
                     
-                    {/* ✨ 開幕活動折扣顯示 */}
                     {eventDiscountAmount > 0 && (
                       <div className="flex justify-between text-pink-500">
                         <span>🎊 開幕活動 (任 4 件 1000)</span><span>- NT$ {eventDiscountAmount}</span>

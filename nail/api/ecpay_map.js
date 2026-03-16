@@ -1,13 +1,14 @@
-exports.handler = async (event) => {
-  const type = event.queryStringParameters.type || 'UNIMARTC2C'; 
+module.exports = async (req, res) => {
+  const type = req.query.type || 'UNIMARTC2C'; 
   
   // 🚨 填入您的正式 MerchantID
   const MerchantID = '3411891'; 
   
   const mapUrl = 'https://logistics.ecpay.com.tw/Express/map';
-  const host = event.headers.host;
+  const host = req.headers.host;
   const protocol = host.includes('localhost') ? 'http' : 'https';
   
+  // 已自動切換為 Vercel 專用路徑
   const ServerReplyURL = `${protocol}://${host}/api/ecpay_map_reply`;
 
   const formHtml = `
@@ -20,5 +21,7 @@ exports.handler = async (event) => {
     </form>
     <script>document.getElementById("map-form").submit();</script>
   `;
-  return { statusCode: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' }, body: formHtml };
+  
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.status(200).send(formHtml);
 };
