@@ -133,6 +133,9 @@
       const [customerPhone, setCustomerPhone] = useState('');
       const [shippingAddress, setShippingAddress] = useState('');
 
+      // ✨ 教學視窗開關狀態
+      const [isGuideOpen, setIsGuideOpen] = useState(false);
+
       useEffect(() => {
         const handleMessage = (event) => {
           if (event.data && event.data.type === 'ECPAY_MAP_RESULT') {
@@ -227,7 +230,6 @@
         }
       };
 
-      // ✨ 已為您更新為 Vercel 專用 API 路徑
       const openMap = (type) => {
         window.open(`/api/ecpay_map?type=${type}`, 'ecpayMap', 'width=1000,height=700,scrollbars=yes');
       };
@@ -247,7 +249,6 @@
           
           const itemNames = itemNamesArr.join('#').substring(0, 390);
 
-          // ✨ 已為您更新為 Vercel 專用 API 路徑
           const response = await fetch('/api/ecpay', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -270,17 +271,38 @@
 
       return (
         <div className="min-h-screen relative">
+          {/* ✨ 頂部聯絡資訊條復活 ✨ */}
+          <div className="bg-[#e8dad2] text-gray-800 text-[11px] md:text-xs py-1.5 px-5 flex justify-center font-bold tracking-widest uppercase">
+             聯絡我們 : viola.lomography@gmail.com
+          </div>
+
           <header className="bg-white/80 backdrop-blur-md sticky top-0 z-40 border-b border-gray-100 shadow-sm">
             <div className="max-w-5xl mx-auto px-5 py-4 flex justify-between items-center">
-              <h1 className="text-2xl font-black tracking-widest uppercase text-gray-900">My Nails.</h1>
-              <button onClick={() => setIsCartOpen(true)} className="relative p-2 flex items-center gap-2 font-bold text-gray-700 hover:text-pink-500 transition-colors">
-                <span className="text-xl">🛒</span> 購物車
-                {cart.length > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-pink-500 text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center shadow-md animate-bounce">
-                    {cart.length}
-                  </span>
-                )}
-              </button>
+              <div className="flex items-center gap-6">
+                <h1 className="text-2xl font-black tracking-widest uppercase text-gray-900">My Nails.</h1>
+                
+                {/* ✨ 導覽列的教學按鈕 (電腦版顯示) */}
+                <button onClick={() => setIsGuideOpen(true)} className="hidden md:block text-sm font-bold text-gray-500 hover:text-pink-500 transition-colors">
+                  📏 尺寸與穿戴教學
+                </button>
+              </div>
+
+              <div className="flex items-center gap-3">
+                {/* ✨ 導覽列的教學按鈕 (手機版顯示小圖示) */}
+                <button onClick={() => setIsGuideOpen(true)} className="md:hidden text-sm font-bold text-gray-500 hover:text-pink-500 bg-gray-50 px-3 py-2 rounded-full">
+                  教學
+                </button>
+
+                <button onClick={() => setIsCartOpen(true)} className="relative p-2 flex items-center gap-2 font-bold text-gray-700 hover:text-pink-500 transition-colors">
+                  <span className="text-xl">🛒</span> 
+                  <span className="hidden sm:inline">購物車</span>
+                  {cart.length > 0 && (
+                    <span className="absolute -top-1 -right-1 bg-pink-500 text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center shadow-md animate-bounce">
+                      {cart.length}
+                    </span>
+                  )}
+                </button>
+              </div>
             </div>
           </header>
 
@@ -304,6 +326,47 @@
               </div>
             )}
           </main>
+
+          {/* ========================================== */}
+          {/* ✨ 穿戴教學彈出視窗 (您可以隨時在這裡修改文字) ✨ */}
+          {/* ========================================== */}
+          {isGuideOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+              <div className="absolute inset-0 bg-black/50 backdrop-blur-sm transition-opacity" onClick={() => setIsGuideOpen(false)}></div>
+              <div className="bg-white rounded-3xl w-full max-w-2xl max-h-[85vh] overflow-y-auto relative z-10 shadow-2xl p-6 md:p-10 animate-fade-in-up">
+                <button onClick={() => setIsGuideOpen(false)} className="absolute top-4 right-4 w-10 h-10 flex items-center justify-center bg-gray-100 hover:bg-gray-200 rounded-full font-bold text-gray-600 transition-colors">✕</button>
+                
+                <h2 className="text-2xl font-black mb-6 text-gray-900 border-b-2 border-pink-100 pb-4">📏 尺寸測量與穿戴教學</h2>
+                
+                <div className="space-y-8 text-gray-700 leading-relaxed">
+                  {/* 第一區塊：測量方式 */}
+                  <section>
+                    <h3 className="text-lg font-bold text-pink-600 mb-3 flex items-center gap-2"><span className="bg-pink-100 px-2 py-1 rounded-lg text-sm">Step 1</span> 如何測量您的本甲尺寸？</h3>
+                    <p className="text-sm bg-gray-50 p-4 rounded-xl border border-gray-100 mb-4">
+                      💡 準備軟尺（或一般膠帶與直尺），沿著指甲最寬處的弧度平貼測量（請勿用力下壓）。
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                      <div className="bg-white border border-gray-200 p-3 rounded-xl"><span className="font-bold text-gray-900 block mb-1">🎀 XS 尺寸</span>拇指 14mm / 食指 10mm<br/>中指 11mm / 無名指 10mm<br/>小指 7mm</div>
+                      <div className="bg-white border border-gray-200 p-3 rounded-xl"><span className="font-bold text-gray-900 block mb-1">🎀 S 尺寸</span>拇指 15mm / 食指 11mm<br/>中指 12mm / 無名指 11mm<br/>小指 8mm</div>
+                      <div className="bg-white border border-gray-200 p-3 rounded-xl"><span className="font-bold text-gray-900 block mb-1">🎀 M 尺寸</span>拇指 16mm / 食指 12mm<br/>中指 13mm / 無名指 12mm<br/>小指 9mm</div>
+                      <div className="bg-white border border-gray-200 p-3 rounded-xl"><span className="font-bold text-gray-900 block mb-1">🎀 L 尺寸</span>拇指 17mm / 食指 13mm<br/>中指 14mm / 無名指 13mm<br/>小指 10mm</div>
+                    </div>
+                  </section>
+                  
+                  {/* 第二區塊：穿戴方式 */}
+                  <section>
+                    <h3 className="text-lg font-bold text-pink-600 mb-3 flex items-center gap-2"><span className="bg-pink-100 px-2 py-1 rounded-lg text-sm">Step 2</span> 正確穿戴步驟</h3>
+                    <ol className="space-y-3 text-sm">
+                      <li className="flex gap-3"><span className="w-6 h-6 rounded-full bg-gray-900 text-white flex items-center justify-center font-bold shrink-0">1</span><div><span className="font-bold text-gray-900">清潔：</span>使用酒精棉片徹底擦拭本甲，去除表面油脂與水分。</div></li>
+                      <li className="flex gap-3"><span className="w-6 h-6 rounded-full bg-gray-900 text-white flex items-center justify-center font-bold shrink-0">2</span><div><span className="font-bold text-gray-900">打磨 (選用)：</span>使用海綿拋稍微打磨本甲表面，可大幅增加果凍膠附著力。</div></li>
+                      <li className="flex gap-3"><span className="w-6 h-6 rounded-full bg-gray-900 text-white flex items-center justify-center font-bold shrink-0">3</span><div><span className="font-bold text-gray-900">貼膠：</span>選擇適合大小的果凍膠貼於本甲，稍微用力按壓擠出裡面的空氣。</div></li>
+                      <li className="flex gap-3"><span className="w-6 h-6 rounded-full bg-gray-900 text-white flex items-center justify-center font-bold shrink-0">4</span><div><span className="font-bold text-gray-900">穿戴：</span>將穿戴甲以 45 度角，從指甲根部向指尖方向推平貼合，並持續用力按壓 15 秒即可！</div></li>
+                    </ol>
+                  </section>
+                </div>
+              </div>
+            </div>
+          )}
 
           {isCartOpen && (
             <div className="fixed inset-0 z-50 flex justify-end">
@@ -432,7 +495,14 @@
               </div>
             </div>
           )}
-          <style dangerouslySetInnerHTML={{__html: ` .animate-fade-in-right { animation: fadeInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; } @keyframes fadeInRight { from { opacity: 0; transform: translateX(100%); } to { opacity: 1; transform: translateX(0); } } `}} />
+          <style dangerouslySetInnerHTML={{__html: ` 
+            .animate-fade-in-right { animation: fadeInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; } 
+            @keyframes fadeInRight { from { opacity: 0; transform: translateX(100%); } to { opacity: 1; transform: translateX(0); } } 
+            
+            /* ✨ 教學視窗的滑動浮現動畫 */
+            .animate-fade-in-up { animation: fadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+            @keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+          `}} />
         </div>
       );
     }
