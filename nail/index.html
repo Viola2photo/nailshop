@@ -1,373 +1,415 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { 
-  Plus, Package, AlertTriangle, CheckCircle, Download, X, 
-  Grid3X3, LogOut, Loader2
-} from 'lucide-react';
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>MyNail 雲端管理中心</title>
+  
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  
+  <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-auth-compat.js"></script>
 
-import { initializeApp } from 'firebase/app';
-import { 
-  getAuth, 
-  signInWithCustomToken, 
-  signInAnonymously, 
-  onAuthStateChanged, 
-  signOut 
-} from 'firebase/auth';
-import { 
-  getFirestore, 
-  collection, 
-  doc, 
-  setDoc, 
-  onSnapshot, 
-  updateDoc, 
-  deleteDoc, 
-  writeBatch 
-} from 'firebase/firestore';
+  <style>
+    @supports (padding-bottom: env(safe-area-bottom)) { .pb-safe { padding-bottom: calc(env(safe-area-inset-bottom) + 0.8rem); } }
+    .animate-fade-in-up { animation: fadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+    @keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+    body { background: #F8FAFC; color: #1E293B; font-family: "Microsoft JhengHei", sans-serif; font-weight: 900; -webkit-tap-highlight-color: transparent; }
+    .glass-nav { background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(12px); border-bottom: 1px solid #F1F5F9; }
+    .card-shadow { box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.04); }
+    input, textarea, select { font-weight: 900 !important; outline: none; }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .btn-active:active { transform: scale(0.9); }
+  </style>
+</head>
+<body class="selection:bg-pink-100">
+  <div id="root"></div>
 
-// 🔑 Firebase 設定
-const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : { projectId: "nailproject-40022" };
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'nail-inventory-app';
-const apiKey = ""; // 執行環境會自動提供
+  <script type="text/babel">
+    const { useState, useRef, useEffect, useMemo } = React;
 
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-
-const NAIL_SHAPES = ['超短梯', '短梯', '中梯', '長梯', '超長梯', '短橢圓', '中橢圓', '長橢圓', '細狗尖', '杏仁甲', '中杏仁', '長杏仁', '短圓', '新中方', '長水滴'];
-
-const Toast = ({ message, type, onClose }) => {
-  useEffect(() => { const timer = setTimeout(onClose, 3000); return () => clearTimeout(timer); }, [onClose]);
-  const bgColor = type === 'success' ? 'bg-gray-900' : 'bg-red-600';
-  return (
-    <div className={`fixed bottom-24 left-1/2 -translate-x-1/2 w-[90%] max-w-sm ${bgColor} text-white px-5 py-4 rounded-2xl shadow-2xl flex items-center gap-3 z-[100] animate-fade-in-up font-black`}>
-      {type === 'success' ? <CheckCircle className="w-5 h-5 text-green-400" /> : <AlertTriangle className="w-5 h-5" />}
-      <span className="text-sm">{message}</span>
-    </div>
-  );
-};
-
-const compressImage = (file, maxRes = 800) => {
-  return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        let { width: w, height: h } = img;
-        if (w > h && w > maxRes) { h *= maxRes / w; w = maxRes; } else if (h > maxRes) { w *= maxRes / h; h = maxRes; }
-        canvas.width = w; canvas.height = h;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, w, h);
-        resolve(canvas.toDataURL('image/jpeg', 0.7));
-      };
-      img.src = e.target.result;
+    // --- Firebase 設定 ---
+    const firebaseConfig = {
+      apiKey: "AIzaSyDQZGeeubB8bEUL59v9yt0QBAfIWJcvgnw",
+      authDomain: "nailproject-40022.firebaseapp.com",
+      projectId: "nailproject-40022",
+      storageBucket: "nailproject-40022.firebasestorage.app",
+      messagingSenderId: "1004628981925",
+      appId: "1:1004628981925:web:db01ede0c09f4071d5754c"
     };
-    reader.readAsDataURL(file);
-  });
-};
 
-export default function App() {
-  const [activeTab, setActiveTab] = useState('inventory');
-  const [inventory, setInventory] = useState([]);
-  const [user, setUser] = useState(null);
-  const [toastMsg, setToastMsg] = useState(null);
-  const [isLoadingDB, setIsLoadingDB] = useState(true);
+    if (!firebase.apps.length) { firebase.initializeApp(firebaseConfig); }
+    const auth = firebase.auth();
+    const db = firebase.firestore();
+    const appId = 'nail-inventory-app';
 
-  // 建檔狀態
-  const [entryMode, setEntryMode] = useState('manual');
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [drafts, setDrafts] = useState([]); 
-  const [manualItem, setManualItem] = useState({
-    name: '', price: 390, shape: '短梯', hashtags: '', stock: { XS: 0, S: 0, M: 0, L: 0 }, media: []
-  });
+    // 完整甲型清單
+    const NAIL_SHAPES = ['超短梯', '短梯', '中梯', '長梯', '超長梯', '短橢圓', '中橢圓', '長橢圓', '細狗尖', '杏仁甲', '中杏仁', '長杏仁', '短圓', '新中方', '長水滴'];
 
-  const [editingItem, setEditingItem] = useState(null);
-  const fileInputRef = useRef(null);
+    // --- SVG 圖示 ---
+    const IconPlus = () => <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4" /></svg>;
+    const IconBox = () => <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" /></svg>;
+    const IconScan = () => <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" /></svg>;
+    const IconExport = () => <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>;
 
-  const showToast = (message, type = 'success') => setToastMsg({ message, type });
-
-  // 登出功能修正
-  const handleLogout = async () => {
-    try {
-      await signOut(auth);
-      showToast("已成功登出系統");
-    } catch (e) {
-      showToast("登出失敗", "error");
-    }
-  };
-
-  useEffect(() => {
-    const initAuth = async () => {
-      if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-        await signInWithCustomToken(auth, __initial_auth_token);
-      } else {
-        await signInAnonymously(auth);
-      }
+    const Toast = ({ message, type, onClose }) => {
+      useEffect(() => { const timer = setTimeout(onClose, 3500); return () => clearTimeout(timer); }, [onClose]);
+      const bgColor = type === 'success' ? '#0F172A' : '#EF4444';
+      return (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 w-[90%] max-w-xs px-6 py-4 rounded-3xl shadow-2xl flex items-center gap-3 z-[200] text-white font-black animate-fade-in-up text-center" style={{backgroundColor: bgColor}}>
+          <span className="text-sm w-full font-black">{message}</span>
+        </div>
+      );
     };
-    initAuth();
-    const unsub = onAuthStateChanged(auth, setUser);
-    return () => unsub();
-  }, []);
 
-  useEffect(() => {
-    if (!user) return;
-    const q = collection(db, 'artifacts', appId, 'users', user.uid, 'inventory');
-    return onSnapshot(q, (snap) => {
-      const data = snap.docs.map(doc => ({ ...doc.data(), docId: doc.id }));
-      data.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
-      setInventory(data);
-      setIsLoadingDB(false);
-    }, (err) => {
-      console.error("Firestore Error:", err);
-      setIsLoadingDB(false);
-    });
-  }, [user]);
-
-  const callAI = async (base64, prompt) => {
-    try {
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [
-            { text: `你是一位美甲店長，請分析圖片並只回傳純 JSON 格式結果，不要 Markdown：${prompt}` },
-            { inlineData: { mimeType: "image/jpeg", data: base64 } }
-          ] }],
-          generationConfig: { response_mime_type: "application/json" }
-        })
+    const compressImage = (file, maxRes = 1024) => {
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const img = new Image();
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            let { width: w, height: h } = img;
+            if (w > maxRes) { h *= maxRes / w; w = maxRes; }
+            canvas.width = w; canvas.height = h;
+            canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+            resolve(canvas.toDataURL('image/jpeg', 0.8));
+          };
+          img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
       });
-      const json = await res.json();
-      if (json.error) throw new Error(json.error.message);
-      const text = json.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
-      return JSON.parse(text.replace(/```json/g, '').replace(/```/g, '').trim());
-    } catch (e) {
-      showToast("AI 暫時無法回應，請嘗試手動建檔", "error");
-      return null;
-    }
-  };
+    };
 
-  const handleManualPhotoUpload = async (e) => {
-    const files = e.target.files; if (!files.length) return;
-    showToast("壓縮圖片中...");
-    const processed = await Promise.all(Array.from(files).map(async f => ({
-      id: Math.random().toString(36).substr(2,9), url: await compressImage(f), type: 'image'
-    })));
-    setManualItem(prev => ({ ...prev, media: [...prev.media, ...processed] }));
-    e.target.value = '';
-  };
+    function App() {
+      const [activeTab, setActiveTab] = useState('inventory');
+      const [inventory, setInventory] = useState([]);
+      const [user, setUser] = useState(null);
+      const [toastMsg, setToastMsg] = useState(null);
+      const [isLoading, setIsLoading] = useState(true);
+      const [editingItem, setEditingItem] = useState(null);
+      const [searchTerm, setSearchTerm] = useState('');
 
-  const saveManualItem = async () => {
-    if (!manualItem.name.trim()) return showToast("請輸入款式名稱", "error");
-    if (!manualItem.media.length) return showToast("請至少上傳一張照片", "error");
-    setIsProcessing(true);
-    try {
-      const id = `NL-${Date.now().toString().slice(-4)}`;
-      await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'inventory', id), {
-        ...manualItem, id, createdAt: new Date().toISOString()
+      // 建檔表單
+      const [newItem, setNewItem] = useState({
+        name: '', price: 390, shape: '短梯', description: '', hashtags: '',
+        stock: { XS: 0, S: 0, M: 0, L: 0 }, media: []
       });
-      setManualItem({ name: '', price: 390, shape: '短梯', hashtags: '', stock: { XS: 0, S: 0, M: 0, L: 0 }, media: [] });
-      setActiveTab('inventory');
-      showToast("已成功存入雲端庫存！");
-    } catch (e) { showToast("儲存失敗", "error"); }
-    finally { setIsProcessing(false); }
-  };
 
-  const handleAIScanUpload = async (e) => {
-    const file = e.target.files[0]; if (!file) return;
-    setIsProcessing(true); setDrafts([]);
-    try {
-      const compressed = await compressImage(file, 1500);
-      const aiBase64 = compressed.split(',')[1];
-      const dbUrl = await compressImage(file, 800);
-      const data = await callAI(aiBase64, `辨識照片中每一副穿戴甲。回傳格式：{"items":[{"styleName":"品名","shape":"甲型","detectedSize":"S"}]}`);
-      if (data && data.items) {
-        setDrafts(data.items.map((it, i) => ({
-          uid: `d-${Date.now()}-${i}`,
-          mediaUrl: dbUrl,
-          formData: { 
-            id: `NAIL-${Math.floor(Math.random()*9000+1000)}`, name: it.styleName || '新商品', 
-            price: 390, shape: it.shape || '短梯', stock: { XS:0, S:0, M:0, L:0, [it.detectedSize||'M']: 1 }
-          }
+      const fileInputRef = useRef(null);
+      const editMediaRef = useRef(null);
+
+      const showToast = (message, type = 'success') => setToastMsg({ message, type });
+
+      useEffect(() => {
+        const unsub = auth.onAuthStateChanged((u) => { 
+          setUser(u); 
+          setIsLoading(false); 
+        });
+        return () => unsub();
+      }, []);
+
+      useEffect(() => {
+        if (!user) return;
+        const ref = db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('inventory');
+        return ref.onSnapshot(snap => {
+          const data = snap.docs.map(doc => ({ ...doc.data(), docId: doc.id }));
+          data.sort((a,b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+          setInventory(data);
+        });
+      }, [user]);
+
+      const handleImageUpload = async (e, isEdit = false) => {
+        const files = e.target.files;
+        if (!files.length) return;
+        showToast("處理相片中...");
+        const processed = await Promise.all(Array.from(files).map(async f => ({
+          id: Math.random().toString(36).substr(2,9),
+          url: await compressImage(f),
+          type: 'image'
         })));
-      }
-    } finally { setIsProcessing(false); e.target.value = ''; }
-  };
+        if (isEdit) {
+          setEditingItem(prev => ({ ...prev, media: [...(prev.media || []), ...processed] }));
+        } else {
+          setNewItem(prev => ({ ...prev, media: [...prev.media, ...processed] }));
+        }
+        e.target.value = '';
+      };
 
-  const saveAIDrafts = async () => {
-    if (!user) return;
-    const batch = writeBatch(db);
-    drafts.forEach(d => {
-      const ref = doc(db, 'artifacts', appId, 'users', user.uid, 'inventory', d.formData.id);
-      batch.set(ref, { ...d.formData, media: [{ url: d.mediaUrl, type: 'image' }], createdAt: new Date().toISOString() });
-    });
-    await batch.commit(); setDrafts([]); setActiveTab('inventory'); showToast("批次建檔完成！");
-  };
+      const saveNewItem = async () => {
+        if (!newItem.name.trim()) return showToast("請輸入款式名稱", "error");
+        if (newItem.media.length === 0) return showToast("請上傳至少一張照片", "error");
+        
+        try {
+          const id = `NL-${Date.now().toString().slice(-6)}`;
+          await db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('inventory').doc(id).set({
+            ...newItem, id, createdAt: new Date().toISOString()
+          });
+          setNewItem({ name: '', price: 390, shape: '短梯', description: '', hashtags: '', stock: { XS: 0, S: 0, M: 0, L: 0 }, media: [] });
+          setActiveTab('inventory');
+          showToast("新款式已成功建檔！");
+        } catch (e) { showToast("儲存失敗", "error"); }
+      };
 
-  return (
-    <div className="min-h-screen bg-[#FDFDFD] text-gray-800 font-sans pb-28 selection:bg-pink-100">
-      {toastMsg && <Toast message={toastMsg.message} type={toastMsg.type} onClose={() => setToastMsg(null)} />}
+      const updateQuickStock = async (item, size, delta) => {
+        const newCount = Math.max(0, (item.stock[size] || 0) + delta);
+        try {
+          await db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('inventory').doc(item.id).update({
+            [`stock.${size}`]: newCount
+          });
+        } catch (e) { showToast("更新失敗", "error"); }
+      };
 
-      <header className="bg-white/80 backdrop-blur-md border-b sticky top-0 z-50 px-6 py-4 flex justify-between items-center">
-        <h1 className="font-black text-xl tracking-tighter flex items-center gap-2">MyNail. <span className="text-gray-300 font-medium italic">Cloud</span></h1>
-        <button onClick={handleLogout} className="flex items-center gap-1 text-[10px] font-black text-gray-400 uppercase tracking-widest hover:text-red-500 transition-colors">
-          <LogOut className="w-3 h-3" /> Logout
-        </button>
-      </header>
+      const filteredInventory = useMemo(() => {
+        return inventory.filter(i => i.name.toLowerCase().includes(searchTerm.toLowerCase()));
+      }, [inventory, searchTerm]);
 
-      <main className="max-w-4xl mx-auto p-4 animate-fade-in-up">
-        {activeTab === 'inventory' && (
-          <div className="space-y-4">
-            {isLoadingDB ? <div className="py-20 text-center text-gray-300 font-black animate-pulse text-xl">連線雲端資料庫中...</div> : 
-             inventory.length === 0 ? (
-               <div className="py-20 text-center bg-gray-50 rounded-[40px] border-2 border-dashed border-gray-200">
-                 <div className="text-6xl mb-4 grayscale opacity-20 text-center flex justify-center"><Package className="w-20 h-20" /></div>
-                 <p className="text-gray-400 font-black mb-6">目前沒有任何款式</p>
-                 <button onClick={() => setActiveTab('add')} className="bg-gray-900 text-white px-8 py-3 rounded-2xl font-black">立即去建檔</button>
-               </div>
-             ) : (
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {inventory.map(item => (
-                  <div key={item.id} onClick={() => setEditingItem(item)} className="bg-white rounded-[32px] p-3 border border-gray-50 shadow-sm active:scale-95 transition-all cursor-pointer hover:shadow-md">
-                    <img src={item.media?.[0]?.url} className="w-full aspect-[4/5] object-cover rounded-[24px] mb-2 shadow-sm" />
-                    <h3 className="font-black text-sm truncate px-1">{item.name}</h3>
-                    <div className="flex gap-1 mt-2">
-                       {['XS','S','M','L'].map(s => (
-                         <div key={s} className={`flex-1 text-[9px] text-center rounded-lg py-1 font-bold ${item.stock?.[s]>0?'bg-slate-900 text-white':'bg-gray-100 text-gray-300'}`}>
-                           {item.stock?.[s] || 0}
-                         </div>
-                       ))}
+      if (isLoading) return <div className="min-h-screen flex items-center justify-center font-black text-slate-300 text-xl">資料載入中...</div>;
+
+      if (!user) return (
+        <div className="min-h-screen flex items-center justify-center bg-slate-900 p-6">
+          <div className="bg-white p-12 rounded-[50px] shadow-2xl text-center max-w-sm w-full animate-fade-in-up">
+            <div className="text-7xl mb-8 font-black">💅</div>
+            <h1 className="text-2xl font-black mb-10 tracking-tight text-slate-800">美甲管理中心</h1>
+            <button 
+              onClick={() => auth.signInWithPopup(new firebase.auth.GoogleAuthProvider())}
+              className="w-full bg-blue-600 text-white py-5 rounded-3xl font-black shadow-xl active:scale-95 transition-all text-lg"
+            >
+              Google 登入
+            </button>
+          </div>
+        </div>
+      );
+
+      return (
+        <div className="min-h-screen pb-32">
+          {toastMsg && <Toast message={toastMsg.message} type={toastMsg.type} onClose={() => setToastMsg(null)} />}
+          
+          <header className="glass-nav sticky top-0 z-50 px-6 py-5 flex justify-between items-center">
+            <h1 className="text-2xl font-black tracking-tighter text-slate-900">MyNail. <span className="text-blue-500 italic font-black">Cloud</span></h1>
+            <button onClick={() => auth.signOut()} className="text-[10px] font-black text-red-400 border border-red-50 px-4 py-1.5 rounded-full uppercase tracking-widest">Logout</button>
+          </header>
+
+          <main className="max-w-5xl mx-auto p-6 animate-fade-in-up">
+            
+            {/* 1. 庫存總覽 */}
+            {activeTab === 'inventory' && (
+              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-5">
+                {inventory.length === 0 ? (
+                  <div className="col-span-full py-40 text-center space-y-4">
+                    <div className="text-6xl opacity-20">📦</div>
+                    <p className="text-slate-300 text-xl font-black font-black">目前尚無庫存資料</p>
+                    <button onClick={() => setActiveTab('add')} className="bg-slate-900 text-white px-8 py-3 rounded-2xl font-black shadow-lg">手動建檔</button>
+                  </div>
+                ) : inventory.map(item => (
+                  <div key={item.id} onClick={() => setEditingItem(item)} className="bg-white rounded-[36px] p-3 border border-slate-50 shadow-sm hover:shadow-xl transition-all cursor-pointer group active:scale-95">
+                    <div className="aspect-[4/5] rounded-[28px] overflow-hidden mb-3 bg-gray-50">
+                      <img src={item.media?.[0]?.url} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+                    </div>
+                    <h3 className="font-black text-sm px-2 truncate mb-2">{item.name}</h3>
+                    <div className="flex gap-1 px-1">
+                      {['XS','S','M','L'].map(sz => (
+                        <div key={sz} className={`flex-1 text-[9px] text-center rounded-lg py-1 font-black ${item.stock?.[sz]>0?'bg-slate-900 text-white':'bg-gray-100 text-slate-300'}`}>{item.stock?.[sz]||0}</div>
+                      ))}
                     </div>
                   </div>
                 ))}
               </div>
             )}
-          </div>
-        )}
 
-        {activeTab === 'add' && (
-          <div className="max-w-xl mx-auto space-y-6">
-            <div className="flex bg-gray-100 p-1.5 rounded-2xl">
-              <button onClick={() => setEntryMode('manual')} className={`flex-1 py-3 rounded-xl font-black text-sm transition-all ${entryMode==='manual'?'bg-white shadow-sm text-gray-900':'text-gray-400'}`}>手動輸入</button>
-              <button onClick={() => setEntryMode('ai')} className={`flex-1 py-3 rounded-xl font-black text-sm transition-all ${entryMode==='ai'?'bg-white shadow-sm text-blue-600':'text-gray-400'}`}>AI 批次判讀</button>
-            </div>
-
-            {entryMode === 'manual' ? (
-              <div className="bg-white p-8 rounded-[40px] border shadow-sm space-y-6 animate-fade-in-up">
-                <div>
-                  <label className="text-[10px] font-black text-gray-400 uppercase mb-3 block">商品照片</label>
-                  <div className="grid grid-cols-4 gap-3">
-                    {manualItem.media.map((m, i) => (
-                      <div key={i} className="aspect-square rounded-2xl overflow-hidden border relative group">
-                        <img src={m.url} className="w-full h-full object-cover" />
-                        <button onClick={() => setManualItem({...manualItem, media: manualItem.media.filter((_, idx)=>idx!==i)})} className="absolute top-1 right-1 bg-red-500 text-white w-5 h-5 rounded-full text-[10px] flex items-center justify-center">✕</button>
-                      </div>
-                    ))}
-                    <button onClick={() => fileInputRef.current.click()} className="aspect-square rounded-2xl border-2 border-dashed border-gray-200 flex items-center justify-center text-3xl text-gray-300 hover:border-gray-400 hover:text-gray-400 transition-colors">＋</button>
-                  </div>
-                  <input type="file" multiple accept="image/*" ref={fileInputRef} onChange={handleManualPhotoUpload} className="hidden" />
+            {/* 2. 快速對帳分頁 */}
+            {activeTab === 'quickCheck' && (
+              <div className="max-w-3xl mx-auto space-y-6">
+                <div className="bg-white rounded-[35px] p-4 border border-slate-100 shadow-sm flex items-center gap-3">
+                  <span className="text-slate-400 pl-2">🔍</span>
+                  <input 
+                    className="flex-1 bg-transparent py-2 font-black text-lg" 
+                    placeholder="搜尋款式來快速更新庫存..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                  />
                 </div>
+                
                 <div className="space-y-4">
-                   <input placeholder="輸入款式名稱" value={manualItem.name} onChange={e=>setManualItem({...manualItem, name:e.target.value})} className="w-full p-4 bg-gray-50 rounded-2xl font-black outline-none border-none text-lg" />
-                   <div className="flex gap-4">
-                     <input type="number" placeholder="單價" value={manualItem.price} onChange={e=>setManualItem({...manualItem, price:e.target.value})} className="flex-1 p-4 bg-gray-50 rounded-2xl font-black outline-none border-none" />
-                     <select value={manualItem.shape} onChange={e=>setManualItem({...manualItem, shape:e.target.value})} className="flex-1 p-4 bg-gray-50 rounded-2xl font-black border-none outline-none">{NAIL_SHAPES.map(s=><option key={s} value={s}>{s}</option>)}</select>
-                   </div>
-                   <div className="grid grid-cols-4 gap-3">
-                      {['XS','S','M','L'].map(s => (
-                        <div key={s} className="text-center bg-gray-50 p-3 rounded-2xl">
-                          <div className="text-[10px] font-bold text-gray-400 mb-1">{s}</div>
-                          <input type="number" value={manualItem.stock[s]} onChange={e=>setManualItem({...manualItem, stock:{...manualItem.stock, [s]:parseInt(e.target.value)||0}})} className="w-full text-center bg-transparent font-black outline-none" />
-                        </div>
-                      ))}
-                   </div>
-                </div>
-                <button onClick={saveManualItem} disabled={isProcessing} className="w-full bg-gray-900 text-white py-5 rounded-[25px] font-black text-xl shadow-xl active:scale-95 transition-all disabled:opacity-50">
-                  {isProcessing ? '正在存入雲端...' : '確認存入庫存 🚀'}
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {isProcessing ? <div className="py-20 text-center font-black animate-pulse flex flex-col items-center gap-4 text-gray-400"><Loader2 className="w-12 h-12 animate-spin" />🧠 AI 正在掃描圖片特徵...</div> : 
-                 drafts.length === 0 ? (
-                   <div className="bg-white p-12 rounded-[40px] border-2 border-dashed border-gray-200 text-center">
-                     <div className="text-6xl mb-6 flex justify-center"><Grid3X3 className="w-20 h-20 text-gray-100" /></div>
-                     <h2 className="text-xl font-black mb-4 tracking-tighter">AI 3x3 批次辨識</h2>
-                     <p className="text-gray-400 text-xs mb-10 leading-relaxed font-bold">請拍攝包含單副或多副的照片<br/>AI 將自動填寫名稱、甲型與尺寸</p>
-                     <button onClick={() => fileInputRef.current.click()} className="w-full bg-blue-600 text-white py-5 rounded-[25px] font-black shadow-xl active:scale-95">📸 開啟相機拍照</button>
-                     <input type="file" accept="image/*" ref={fileInputRef} onChange={handleAIScanUpload} className="hidden" />
-                   </div>
-                 ) : (
-                   <div className="space-y-4 pb-10 animate-fade-in-up">
-                      <div className="flex justify-between items-center bg-gray-900 text-white p-4 rounded-2xl shadow-lg">
-                        <span className="font-black text-sm">✅ 辨識出 {drafts.length} 款式</span>
-                        <button onClick={()=>setDrafts([])} className="text-[10px] font-black bg-white/20 px-3 py-1.5 rounded-lg">重拍</button>
-                      </div>
-                      {drafts.map(d => (
-                        <div key={d.uid} className="bg-white p-5 rounded-[32px] border-2 border-blue-50 flex gap-4">
-                           <img src={d.mediaUrl} className="w-16 h-20 object-cover rounded-xl shadow-sm" />
-                           <div className="flex-1 min-w-0">
-                              <input value={d.formData.name} onChange={e=>setDrafts(drafts.map(it=>it.uid===d.uid?{...it, formData:{...it.formData, name:e.target.value}}:it))} className="w-full font-black border-b border-gray-100 outline-none text-lg mb-2 text-blue-600" />
-                              <div className="flex gap-2 text-[10px] font-black">
-                                <span className="bg-pink-50 text-pink-600 px-2 py-1 rounded">{d.formData.shape}</span>
-                                <span className="bg-gray-900 text-white px-2 py-1 rounded ml-auto">偵測尺寸: {Object.keys(d.formData.stock).find(k=>d.formData.stock[k]>0) || 'M'}</span>
+                  {filteredInventory.map(item => (
+                    <div key={item.id} className="bg-white p-4 rounded-[35px] border border-slate-50 shadow-sm flex items-center gap-4">
+                      <img src={item.media?.[0]?.url} className="w-16 h-20 rounded-2xl object-cover shadow-sm" />
+                      <div className="flex-1 min-w-0">
+                        <h4 className="font-black truncate mb-3">{item.name}</h4>
+                        <div className="grid grid-cols-4 gap-2">
+                          {['XS','S','M','L'].map(sz => (
+                            <div key={sz} className="flex flex-col items-center">
+                              <span className="text-[9px] text-slate-400 mb-1 font-black">{sz}</span>
+                              <div className="flex items-center gap-2 bg-slate-50 rounded-full px-2 py-1">
+                                <button onClick={() => updateQuickStock(item, sz, -1)} className="w-5 h-5 flex items-center justify-center bg-white rounded-full shadow-sm text-red-500 font-black btn-active">-</button>
+                                <span className="text-xs font-black min-w-[12px] text-center">{item.stock[sz]||0}</span>
+                                <button onClick={() => updateQuickStock(item, sz, 1)} className="w-5 h-5 flex items-center justify-center bg-white rounded-full shadow-sm text-blue-500 font-black btn-active">+</button>
                               </div>
-                           </div>
+                            </div>
+                          ))}
                         </div>
-                      ))}
-                      <button onClick={saveAIDrafts} className="w-full bg-blue-600 text-white py-6 rounded-[30px] font-black text-2xl shadow-2xl active:scale-95">確認存入資料庫 💾</button>
-                   </div>
-                 )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
-          </div>
-        )}
-      </main>
 
-      {/* ✏️ 編輯款式 */}
-      {editingItem && (
-        <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-xl flex items-center justify-center p-4">
-           <div className="bg-white rounded-[40px] p-8 w-full max-w-xl max-h-[85vh] overflow-y-auto no-scrollbar animate-fade-in-up">
-              <div className="flex justify-between items-center mb-8 border-b pb-4"><h2 className="font-black text-2xl tracking-tight">✏️ 編輯商品</h2><button onClick={() => setEditingItem(null)} className="p-3 bg-gray-100 rounded-full hover:bg-gray-200 transition-colors"><X className="w-5 h-5" /></button></div>
-              <div className="space-y-8">
-                 <div className="grid grid-cols-4 gap-3">
-                   {editingItem.media?.map((m, i) => <img key={i} src={m.url} className="aspect-square object-cover rounded-2xl border" />)}
-                 </div>
-                 <div className="space-y-4">
-                    <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">款式名稱</label>
-                    <input value={editingItem.name} onChange={e=>setEditingItem({...editingItem, name:e.target.value})} className="w-full p-4 bg-gray-50 rounded-2xl font-black outline-none border-none text-xl" />
-                 </div>
-                 <div className="grid grid-cols-4 gap-3">
-                    {['XS','S','M','L'].map(s => (
-                      <div key={s} className="text-center bg-gray-50 p-4 rounded-2xl">
-                        <div className="text-[10px] text-gray-400 mb-1">{s}</div>
-                        <input type="number" value={editingItem.stock[s] || 0} onChange={e=>setEditingItem({...editingItem, stock:{...editingItem.stock, [s]:parseInt(e.target.value)||0}})} className="w-full text-center bg-transparent font-black outline-none" />
+            {/* 3. 手動建檔分頁 */}
+            {activeTab === 'add' && (
+              <div className="max-w-2xl mx-auto py-2">
+                <div className="bg-white rounded-[50px] p-8 md:p-12 border border-slate-100 shadow-2xl space-y-10">
+                   <h2 className="text-3xl font-black tracking-tight flex items-center gap-3">手動建檔模式</h2>
+                   
+                   <div className="space-y-8">
+                      <div>
+                        <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest mb-4 block">款式照片 (多選)</label>
+                        <div className="grid grid-cols-4 gap-3">
+                           {newItem.media.map((m, i) => (
+                             <div key={i} className="aspect-square rounded-2xl overflow-hidden border relative group">
+                                <img src={m.url} className="w-full h-full object-cover" />
+                                <button onClick={() => setNewItem({...newItem, media: newItem.media.filter((_, idx)=>idx!==i)})} className="absolute top-1 right-1 bg-red-500 text-white w-5 h-5 rounded-full text-[10px] font-black flex items-center justify-center shadow-lg font-black font-black">✕</button>
+                             </div>
+                           ))}
+                           <button onClick={() => fileInputRef.current.click()} className="aspect-square rounded-2xl border-2 border-dashed border-slate-200 flex items-center justify-center text-slate-300 hover:border-blue-400 transition-colors">
+                              <IconPlus />
+                           </button>
+                        </div>
+                        <input type="file" multiple accept="image/*" ref={fileInputRef} onChange={(e) => handleImageUpload(e)} className="hidden" />
                       </div>
-                    ))}
-                 </div>
-                 <div className="flex gap-4 pt-6 border-t">
-                    <button onClick={async () => {if(window.confirm("確定永久刪除？")) { await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'inventory', editingItem.id)); setEditingItem(null); showToast("已刪除款式"); }}} className="flex-1 bg-red-50 text-red-500 py-5 rounded-[25px] font-black">刪除</button>
-                    <button onClick={async () => { await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'inventory', editingItem.id), editingItem); setEditingItem(null); showToast("修改已儲存 💾"); }} className="flex-[2] bg-gray-900 text-white py-5 rounded-[25px] font-black shadow-xl">儲存</button>
-                 </div>
-              </div>
-           </div>
-        </div>
-      )}
 
-      {/* 📱 底部導覽列 */}
-      <nav className="fixed bottom-0 left-0 right-0 glass border-t border-gray-100 pb-safe z-40 flex justify-around items-end px-6 h-28">
-        <button onClick={() => setActiveTab('inventory')} className={`flex-1 pb-6 pt-5 flex flex-col items-center gap-1.5 transition-all ${activeTab === 'inventory' ? 'text-slate-900 scale-110' : 'text-slate-300'}`}><Package className="w-7 h-7" /><span className="text-[10px] font-black uppercase">庫存</span></button>
-        <button onClick={() => setActiveTab('add')} className="relative flex flex-col items-center justify-center -top-10 w-24"><div className={`w-20 h-20 rounded-[32px] flex items-center justify-center text-white shadow-2xl transition-all ${activeTab === 'add' ? 'bg-blue-600 scale-110' : 'bg-slate-900'}`}><Plus className="w-10 h-10" /></div><span className={`text-[10px] font-black mt-4 uppercase ${activeTab === 'add' ? 'text-blue-600' : 'text-slate-400'}`}>建檔</span></button>
-        <button onClick={() => {
-            const content = ['編號,名稱,甲型,標籤,XS,S,M,L', ...inventory.map(i => [i.id, i.name, i.shape, i.hashtags, i.stock.XS, i.stock.S, i.stock.M, i.stock.L].join(','))].join('\n');
-            const blob = new Blob(['\ufeff' + content], { type: 'text/csv;charset=utf-8;' });
-            const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `Inventory.csv`; link.click();
-        }} className="flex-1 pb-6 pt-5 flex flex-col items-center gap-1.5 text-gray-300 active:text-gray-900"><Download className="w-7 h-7" /><span className="text-[10px] font-black uppercase">匯出</span></button>
-      </nav>
-      
-      <style dangerouslySetInnerHTML={{__html: ` 
-        @supports (padding-bottom: env(safe-area-bottom)) { .pb-safe { padding-bottom: calc(env(safe-area-inset-bottom) + 0.8rem); } }
-        .animate-fade-in-up { animation: fadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
-        @keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
-      `}} />
-    </div>
-  );
-}
+                      <div className="grid grid-cols-2 gap-5 text-slate-900">
+                        <div className="col-span-2">
+                           <label className="text-[11px] font-black text-slate-400 mb-2 block uppercase font-black">款式名稱</label>
+                           <input value={newItem.name} onChange={e => setNewItem({...newItem, name:e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl font-black text-lg focus:bg-white focus:ring-2 focus:ring-blue-100 transition-all" placeholder="輸入商品名稱..." />
+                        </div>
+                        <div>
+                           <label className="text-[11px] font-black text-slate-400 mb-2 block uppercase font-black">款式甲型 (恢復)</label>
+                           <select value={newItem.shape} onChange={e => setNewItem({...newItem, shape:e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl font-black appearance-none">
+                              {NAIL_SHAPES.map(s => <option key={s} value={s}>{s}</option>)}
+                           </select>
+                        </div>
+                        <div>
+                           <label className="text-[11px] font-black text-slate-400 mb-2 block uppercase font-black">建議售價</label>
+                           <input type="number" value={newItem.price} onChange={e => setNewItem({...newItem, price:e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl font-black font-black" />
+                        </div>
+                        <div className="col-span-2">
+                           <label className="text-[11px] font-black text-slate-400 mb-2 block uppercase font-black">簡短描述 (恢復)</label>
+                           <textarea value={newItem.description} onChange={e => setNewItem({...newItem, description:e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl font-black h-24 no-scrollbar" placeholder="在這裡輸入商品的特色與詳細說明..." />
+                        </div>
+                        <div className="col-span-2">
+                           <label className="text-[11px] font-black text-slate-400 mb-2 block uppercase font-black font-black">標籤 Hashtags</label>
+                           <input value={newItem.hashtags} onChange={e => setNewItem({...newItem, hashtags:e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl font-black text-blue-500" placeholder="#優雅 #法式 #質感" />
+                        </div>
+                        <div className="col-span-2">
+                           <label className="text-[11px] font-black text-slate-400 mb-2 block uppercase font-black font-black">初始庫存量</label>
+                           <div className="grid grid-cols-4 gap-3">
+                              {['XS','S','M','L'].map(sz => (
+                                <div key={sz} className="text-center bg-slate-50 p-3 rounded-2xl">
+                                  <div className="text-[10px] text-slate-400 mb-1 font-black">{sz}</div>
+                                  <input type="number" value={newItem.stock[sz]} onChange={e => setNewItem({...newItem, stock:{...newItem.stock, [sz]:parseInt(e.target.value)||0}})} className="w-full text-center bg-transparent font-black text-lg" />
+                                </div>
+                              ))}
+                           </div>
+                        </div>
+                      </div>
+                   </div>
+
+                   <button onClick={saveNewItem} className="w-full bg-slate-900 text-white py-6 rounded-[32px] font-black text-2xl shadow-xl active:scale-95 transition-all font-black">確認建檔存入 🚀</button>
+                </div>
+              </div>
+            )}
+          </main>
+
+          {/* ✏️ 編輯商品彈窗 */}
+          {editingItem && (
+            <div className="fixed inset-0 z-[100] bg-slate-900/90 backdrop-blur-xl flex items-center justify-center p-4">
+               <div className="bg-white rounded-[60px] p-10 w-full max-w-3xl max-h-[90vh] overflow-y-auto no-scrollbar font-black text-slate-900 animate-fade-in-up">
+                  <div className="flex justify-between items-center mb-10 border-b pb-6">
+                    <h2 className="text-3xl font-black tracking-tight text-slate-900 font-black">編輯款式詳情</h2>
+                    <button onClick={() => setEditingItem(null)} className="p-4 bg-slate-100 rounded-full font-black text-xl hover:bg-slate-200 transition-colors">✕</button>
+                  </div>
+                  <div className="space-y-8 text-left font-black">
+                     <div>
+                        <div className="flex justify-between items-end mb-5">
+                          <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block font-black">媒體內容管理</label>
+                          <button onClick={() => editMediaRef.current.click()} className="bg-slate-900 text-white text-[10px] px-6 py-2 rounded-full font-black shadow-lg">＋ 新增相片</button>
+                        </div>
+                        <input type="file" multiple accept="image/*" ref={editMediaRef} onChange={(e) => handleImageUpload(e, true)} className="hidden" />
+                        <div className="grid grid-cols-4 gap-4">
+                           {editingItem.media?.map((m, i) => (
+                             <div key={m.id} className="aspect-square relative rounded-3xl overflow-hidden border">
+                               <img src={m.url} className="w-full h-full object-cover" />
+                               <button onClick={() => setEditingItem({...editingItem, media: editingItem.media.filter((_, idx)=>idx!==i)})} className="absolute top-2 right-2 bg-red-500 text-white w-6 h-6 rounded-full text-xs font-black shadow-lg flex items-center justify-center">✕</button>
+                             </div>
+                           ))}
+                        </div>
+                     </div>
+                     <div className="grid grid-cols-2 gap-8 text-slate-900">
+                        <div className="col-span-2">
+                           <label className="text-[11px] text-slate-400 mb-1 block uppercase font-black">名稱</label>
+                           <input value={editingItem.name} onChange={e => setEditingItem({...editingItem, name:e.target.value})} className="w-full p-5 bg-slate-50 rounded-3xl font-black border-none text-xl" />
+                        </div>
+                        <div className="col-span-2">
+                           <label className="text-[11px] text-slate-400 mb-1 block uppercase font-black">款式甲型 (恢復)</label>
+                           <select value={editingItem.shape} onChange={e => setEditingItem({...editingItem, shape:e.target.value})} className="w-full p-5 bg-slate-50 rounded-3xl font-black border-none text-xl">
+                              {NAIL_SHAPES.map(s=><option key={s} value={s}>{s}</option>)}
+                           </select>
+                        </div>
+                        <div className="col-span-2">
+                           <label className="text-[11px] text-slate-400 mb-1 block uppercase font-black">詳細描述 (恢復)</label>
+                           <textarea value={editingItem.description} onChange={e => setEditingItem({...editingItem, description:e.target.value})} className="w-full p-5 bg-slate-50 rounded-3xl font-black h-32 no-scrollbar text-sm font-black" />
+                        </div>
+                        <div className="grid grid-cols-4 gap-4 col-span-2 text-center font-black">
+                           {['XS','S','M','L'].map(sz => (
+                             <div key={sz}>
+                               <div className="text-[10px] text-slate-400 mb-2 font-black font-black">{sz}</div>
+                               <input type="number" value={editingItem.stock[sz]} onChange={e => setEditingItem({...editingItem, stock:{...editingItem.stock, [sz]:parseInt(e.target.value)||0}})} className="w-full text-center p-5 bg-slate-50 rounded-3xl font-black text-xl" />
+                             </div>
+                           ))}
+                        </div>
+                     </div>
+                     <div className="flex gap-6 pt-10 border-t border-slate-50">
+                        <button onClick={async () => {if(window.confirm("確定永久刪除？")) { await db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('inventory').doc(editingItem.id).delete(); setEditingItem(null); showToast("已刪除"); }}} className="flex-1 bg-red-50 text-red-500 py-6 rounded-[35px] font-black text-xl hover:bg-red-100 transition-all font-black font-black">刪除款式</button>
+                        <button onClick={async () => { await db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('inventory').doc(editingItem.id).update(editingItem); setEditingItem(null); showToast("修改已儲存 💾"); }} className="flex-[2] bg-slate-900 text-white py-6 rounded-[35px] font-black text-2xl shadow-2xl active:scale-95 transition-all font-black font-black font-black">確認儲存</button>
+                     </div>
+                  </div>
+               </div>
+            </div>
+          )}
+
+          {/* 📱 底部手機導覽列 */}
+          <nav className="fixed bottom-0 left-0 right-0 glass-nav border-t border-slate-100 pb-safe z-40 flex justify-around items-end px-8 h-28">
+            <button onClick={() => setActiveTab('inventory')} className={`flex-1 pb-6 pt-5 flex flex-col items-center gap-2 transition-all ${activeTab === 'inventory' ? 'text-slate-900 scale-110' : 'text-slate-300'}`}>
+              <IconBox /><span className="text-[10px] font-black uppercase font-black">庫存</span>
+            </button>
+            <button onClick={() => setActiveTab('quickCheck')} className={`flex-1 pb-6 pt-5 flex flex-col items-center gap-2 transition-all ${activeTab === 'quickCheck' ? 'text-slate-900 scale-110' : 'text-slate-300'}`}>
+              <IconScan /><span className="text-[10px] font-black uppercase font-black">快速對帳</span>
+            </button>
+            <button onClick={() => setActiveTab('add')} className="relative flex flex-col items-center justify-center -top-10 w-24">
+              <div className={`w-20 h-20 rounded-[35px] flex items-center justify-center text-white shadow-2xl transition-all ${activeTab === 'add' ? 'bg-blue-600 scale-110 shadow-blue-200' : 'bg-slate-900 shadow-slate-200'}`}>
+                <IconPlus />
+              </div>
+              <span className={`text-[10px] font-black mt-4 uppercase font-black ${activeTab === 'add' ? 'text-blue-600' : 'text-slate-400'}`}>建檔</span>
+            </button>
+            <button onClick={() => {
+                const headers = ['編號,名稱,甲型,描述,標籤,XS,S,M,L'];
+                const content = [headers, ...inventory.map(i => [i.id, i.name, i.shape, (i.description||"").replace(/,/g,' '), i.hashtags, i.stock.XS, i.stock.S, i.stock.M, i.stock.L].join(','))].join('\n');
+                const blob = new Blob(['\ufeff' + content], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `Shop_Inventory.csv`; link.click();
+              }} className="flex-1 pb-6 pt-5 flex flex-col items-center gap-2 text-slate-300 active:text-slate-900">
+              <IconExport /><span className="text-[10px] font-black uppercase font-black">匯出</span>
+            </button>
+          </nav>
+        </div>
+      );
+    }
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
