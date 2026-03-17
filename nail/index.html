@@ -25,10 +25,8 @@
     .no-scrollbar::-webkit-scrollbar { display: none; }
     .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
-    /* 確保底欄按鈕不會被裁切 */
     .nav-shadow { box-shadow: 0 -10px 25px -5px rgba(0, 0, 0, 0.05); }
     
-    /* 自定義 Select 外觀 */
     .custom-select {
       background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2394a3b8'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
       background-repeat: no-repeat;
@@ -50,26 +48,24 @@
     const IconUpload = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>;
     const IconWand = () => <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.21 1.21 0 0 0 1.72 0L21.64 5.36a1.21 1.21 0 0 0 0-1.72Z"/><path d="m14 7 3 3"/></svg>;
 
-    // --- Firebase 配置 (延用您的原始設定) ---
+    // --- ⚠️ 重要：請在此填入您原本的 Firebase 金鑰 ⚠️ ---
     const firebaseConfig = {
-      apiKey: "",
-      authDomain: "",
-      projectId: "",
-      storageBucket: "",
-      messagingSenderId: "",
-      appId: ""
+      apiKey: "AIzaSyDQZGeeubB8bEUL59v9yt0QBAfIWJcvgnw",
+      authDomain: "nailproject-40022.firebaseapp.com",
+      projectId: "nailproject-40022",
+      storageBucket: "nailproject-40022.firebasestorage.app",
+      messagingSenderId: "1004628981925",
+      appId: "1:1004628981925:web:db01ede0c09f4071d5754c"
     };
 
     // 初始化 Firebase
     let db = null;
     try {
-      if (!firebase.apps.length) {
-        firebase.initializeApp(firebaseConfig);
+      if (firebaseConfig.apiKey) {
+        if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+        db = firebase.firestore();
       }
-      db = firebase.firestore();
-    } catch (e) {
-      console.error("Firebase 連線失敗:", e);
-    }
+    } catch (e) { console.error("Firebase 連線失敗:", e); }
 
     const App = () => {
       const [activeTab, setActiveTab] = useState('list');
@@ -85,18 +81,24 @@
       const [formData, setFormData] = useState(defaultForm);
       const [editingIndex, setEditingIndex] = useState(-1);
 
-      // --- 資料讀取 ---
+      // --- 讀取資料 ---
       useEffect(() => {
-        if (!db) return;
+        if (!db) {
+          setLoading(false);
+          return;
+        }
         const unsubscribe = db.collection('nail_inventory').onSnapshot(snapshot => {
           const data = snapshot.docs.map(doc => ({ docId: doc.id, ...doc.data() }));
           setInventory(data);
+          setLoading(false);
+        }, err => {
+          console.error("讀取失敗:", err);
           setLoading(false);
         });
         return () => unsubscribe();
       }, []);
 
-      // --- 功能：自動產生 NL-XXXX 編號 ---
+      // --- 功能：自動產生下一個 NL 編號 ---
       const generateNextId = (currentInventory = inventory) => {
         const numericIds = currentInventory
           .map(item => {
@@ -109,26 +111,20 @@
         return `NL-${nextNum}`;
       };
 
-      // --- 功能：一鍵整理所有編號 ---
+      // --- 功能：重編所有非標格式編號 ---
       const handleNormalizeIds = async () => {
-        if (!confirm('將重新格式化所有編號為 NL-XXXX 順序，確定嗎？')) return;
-        
+        if (!confirm('將重新格式化所有編號為 NL-XXXX 格式，確定嗎？')) return;
         const batch = db.batch();
-        // 按照目前列表順序重新給予編號
-        inventory.forEach((item, idx) => {
+        let currentNum = 3352;
+        inventory.forEach((item) => {
+          currentNum++;
           const ref = db.collection('nail_inventory').doc(item.docId);
-          batch.update(ref, { id: `NL-${3353 + idx}` });
+          batch.update(ref, { id: `NL-${currentNum}` });
         });
-        
-        try {
-          await batch.commit();
-          alert('編號整理完成！');
-        } catch (error) {
-          alert('更新失敗: ' + error.message);
-        }
+        await batch.commit();
+        alert('整理完成！');
       };
 
-      // --- 處理表單輸入 ---
       const handleInputChange = (e) => {
         const { name, value } = e.target;
         if (['XS', 'S', 'M', 'L'].includes(name)) {
@@ -138,35 +134,30 @@
         }
       };
 
-      // --- 儲存項目 ---
       const handleSave = async () => {
         if (!formData.name) return alert('請填寫款式名稱');
+        if (!db) return alert('請先填入 Firebase 金鑰以連線資料庫');
         
-        const dataToSave = { ...formData };
         try {
           if (editingIndex >= 0) {
-            await db.collection('nail_inventory').doc(inventory[editingIndex].docId).update(dataToSave);
+            await db.collection('nail_inventory').doc(inventory[editingIndex].docId).update(formData);
           } else {
-            await db.collection('nail_inventory').add(dataToSave);
+            await db.collection('nail_inventory').add(formData);
           }
           setFormData(defaultForm);
           setEditingIndex(-1);
           setActiveTab('list');
-        } catch (error) {
-          alert('儲存失敗: ' + error.message);
-        }
+        } catch (e) { alert('儲存失敗：' + e.message); }
       };
 
-      // --- 批次匯入 CSV ---
       const handleCsvImport = (e) => {
         const file = e.target.files[0];
-        if (!file) return;
+        if (!file || !db) return;
         const reader = new FileReader();
         reader.onload = async (event) => {
           const text = event.target.result;
           const lines = text.split('\n').filter(l => l.trim());
-          
-          let currentMaxNum = inventory.length > 0 ? Math.max(...inventory.map(i => {
+          let currentMax = inventory.length > 0 ? Math.max(...inventory.map(i => {
             const m = String(i.id).match(/\d+/);
             return m ? parseInt(m[0]) : 3352;
           })) : 3352;
@@ -175,37 +166,32 @@
           for (let i = 1; i < lines.length; i++) {
             const row = lines[i].split(',').map(c => c.trim().replace(/^"|"$/g, ''));
             if (row.length < 2) continue;
-            currentMaxNum++;
-            const newDocRef = db.collection('nail_inventory').doc();
-            batch.set(newDocRef, {
-              id: `NL-${currentMaxNum}`,
+            currentMax++;
+            const newRef = db.collection('nail_inventory').doc();
+            batch.set(newRef, {
+              id: `NL-${currentMax}`,
               name: row[1] || '未命名',
               description: row[2] || '',
               hashtags: row[3] || '',
               shape: '中長水滴',
               stock: { XS: 0, S: 0, M: 0, L: 0 },
-              image: row[4] || ''
+              image: ''
             });
           }
-
-          try {
-            await batch.commit();
-            alert(`成功批次匯入款式！`);
-            setActiveTab('list');
-          } catch (error) {
-            alert('匯入失敗: ' + error.message);
-          }
+          await batch.commit();
+          alert('匯入完成！已自動轉換為 NL 編號。');
+          setActiveTab('list');
         };
         reader.readAsText(file);
       };
 
       return (
-        <div className="max-w-md mx-auto min-h-screen pb-[120px] flex flex-col font-sans overflow-x-hidden">
+        <div className="max-w-md mx-auto min-h-screen pb-[120px] flex flex-col font-sans">
           {/* Header */}
           <header className="bg-white/80 backdrop-blur-md sticky top-0 z-30 px-6 py-6 flex justify-between items-end border-b border-slate-100">
             <div>
               <h1 className="text-2xl font-black text-slate-900 tracking-tight italic">MYNAIL</h1>
-              <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest mt-0.5">Management System</p>
+              <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest mt-0.5">Cloud Management</p>
             </div>
             {activeTab === 'list' && (
               <button onClick={handleNormalizeIds} className="flex items-center gap-1.5 bg-slate-900 text-white text-[10px] font-black px-4 py-2 rounded-full shadow-lg active:scale-95 transition-transform">
@@ -215,32 +201,32 @@
           </header>
 
           <main className="flex-1 p-5">
-            {/* 列表模式 */}
             {activeTab === 'list' && (
               <div className="space-y-4">
                 {loading ? (
-                  <div className="py-20 text-center text-slate-300 animate-pulse">連線中...</div>
+                  <div className="py-20 text-center text-slate-300 animate-pulse font-bold">資料庫連線中...</div>
+                ) : !firebaseConfig.apiKey ? (
+                  <div className="py-20 text-center text-red-400 font-bold px-10">
+                    <p>尚未填入 Firebase 金鑰！</p>
+                    <p className="text-xs mt-2 font-normal text-slate-400">請在程式碼中填入金鑰，資料就會顯示出來。</p>
+                  </div>
                 ) : inventory.length === 0 ? (
                   <div className="py-20 text-center opacity-30 flex flex-col items-center">
                     <IconImage />
-                    <p className="text-sm font-bold mt-4 tracking-widest">NO DESIGNS FOUND</p>
+                    <p className="text-sm font-bold mt-4 tracking-widest uppercase">No Designs Found</p>
                   </div>
                 ) : (
                   inventory.map((item, idx) => (
                     <div key={idx} className="bg-white rounded-[32px] p-4 flex gap-4 shadow-sm border border-slate-50 animate-fade-in-up" style={{animationDelay: `${idx * 0.05}s`}}>
                       <div className="w-24 h-24 bg-slate-100 rounded-[24px] overflow-hidden flex-shrink-0 relative">
-                        {item.image ? (
-                          <img src={item.image} className="w-full h-full object-cover" />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center text-slate-300"><IconImage /></div>
-                        )}
+                        {item.image ? <img src={item.image} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-slate-200"><IconImage /></div>}
                         <div className="absolute top-1.5 left-1.5 bg-white/90 backdrop-blur-sm px-2.5 py-0.5 rounded-full text-[8px] font-black text-slate-700 shadow-sm">{item.shape}</div>
                       </div>
                       <div className="flex-1 py-1 flex flex-col">
                         <span className="text-[10px] font-black text-blue-600 tracking-tighter uppercase">{item.id}</span>
                         <h3 className="font-bold text-slate-900 text-lg leading-tight mt-0.5">{item.name}</h3>
-                        <p className="text-[11px] text-slate-400 mt-1 line-clamp-1">{item.hashtags || '無標籤'}</p>
-                        <button onClick={() => { setFormData(item); setEditingIndex(idx); setActiveTab('add'); }} className="mt-auto self-start text-[10px] font-black bg-slate-50 text-slate-500 px-4 py-2 rounded-full active:bg-slate-100 transition-colors">編輯詳情</button>
+                        <p className="text-[11px] text-slate-400 mt-1 line-clamp-1">{item.hashtags || '未添加標籤'}</p>
+                        <button onClick={() => { setFormData(item); setEditingIndex(idx); setActiveTab('add'); }} className="mt-auto self-start text-[10px] font-black bg-slate-50 text-slate-500 px-4 py-2 rounded-full">編輯款式</button>
                       </div>
                     </div>
                   ))
@@ -248,14 +234,13 @@
               </div>
             )}
 
-            {/* 建檔模式 */}
             {activeTab === 'add' && (
               <div className="animate-fade-in-up space-y-6">
                 {editingIndex === -1 && (
                   <div onClick={() => csvInputRef.current.click()} className="bg-blue-600 rounded-[32px] p-6 text-white shadow-xl shadow-blue-100 flex items-center justify-between cursor-pointer active:scale-95 transition-transform">
                     <div>
-                      <h4 className="font-black text-lg italic tracking-tight">CSV 批量上架</h4>
-                      <p className="text-xs opacity-80 font-medium mt-0.5">一鍵載入試算表內容</p>
+                      <h4 className="font-black text-lg italic tracking-tight uppercase">CSV 批量上架</h4>
+                      <p className="text-xs opacity-80 font-medium mt-0.5">點擊匯入試算表，自動轉為 NL 編號</p>
                     </div>
                     <IconUpload />
                     <input type="file" accept=".csv" ref={csvInputRef} className="hidden" onChange={handleCsvImport} />
@@ -265,16 +250,16 @@
                 <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-50 space-y-6">
                   <div className="flex gap-4">
                     <div className="flex-1">
-                      <label className="text-[10px] font-black text-slate-400 ml-2 mb-2 block uppercase tracking-widest">編號</label>
+                      <label className="text-[10px] font-black text-slate-400 ml-2 mb-2 block uppercase tracking-widest">款式編號</label>
                       <input name="id" value={formData.id} onChange={handleInputChange} className="w-full bg-slate-50 border-none rounded-2xl px-5 py-3.5 text-sm font-bold focus:ring-2 focus:ring-blue-500" placeholder="NL-3353" />
                     </div>
                     <div className="flex-[2]">
                       <label className="text-[10px] font-black text-slate-400 ml-2 mb-2 block uppercase tracking-widest">款式名稱</label>
-                      <input name="name" value={formData.name} onChange={handleInputChange} className="w-full bg-slate-50 border-none rounded-2xl px-5 py-3.5 text-sm font-bold focus:ring-2 focus:ring-blue-500" placeholder="櫻花紛飛" />
+                      <input name="name" value={formData.name} onChange={handleInputChange} className="w-full bg-slate-50 border-none rounded-2xl px-5 py-3.5 text-sm font-bold focus:ring-2 focus:ring-blue-500" />
                     </div>
                   </div>
 
-                  {/* 甲型選擇欄位 */}
+                  {/* ★ 恢復：甲型選擇欄位 ★ */}
                   <div>
                     <label className="text-[10px] font-black text-slate-400 ml-2 mb-2 block uppercase tracking-widest">對應甲型</label>
                     <select name="shape" value={formData.shape} onChange={handleInputChange} className="w-full bg-slate-50 border-none rounded-2xl px-5 py-3.5 text-sm font-bold focus:ring-2 focus:ring-blue-500 custom-select appearance-none">
@@ -288,9 +273,9 @@
                   </div>
 
                   <div>
-                    <label className="text-[10px] font-black text-slate-400 ml-2 mb-2 block uppercase tracking-widest">實拍圖片</label>
-                    <div onClick={() => fileInputRef.current.click()} className="aspect-square w-full bg-slate-50 rounded-[32px] border-2 border-dashed border-slate-200 flex flex-col items-center justify-center overflow-hidden relative cursor-pointer hover:bg-slate-100 transition-colors">
-                      {formData.image ? <img src={formData.image} className="w-full h-full object-cover" /> : <div className="text-slate-300 flex flex-col items-center"><IconImage /><span className="text-[10px] mt-2 font-bold uppercase">Click to Upload</span></div>}
+                    <label className="text-[10px] font-black text-slate-400 ml-2 mb-2 block uppercase tracking-widest">商品照片</label>
+                    <div onClick={() => fileInputRef.current.click()} className="aspect-square w-full bg-slate-50 rounded-[32px] border-2 border-dashed border-slate-200 flex flex-col items-center justify-center overflow-hidden relative cursor-pointer active:scale-95 transition-transform hover:bg-slate-100">
+                      {formData.image ? <img src={formData.image} className="w-full h-full object-cover" /> : <div className="text-slate-300 flex flex-col items-center"><IconImage /><span className="text-[9px] mt-2 font-black uppercase">Click to Upload</span></div>}
                       <input type="file" accept="image/*" ref={fileInputRef} className="hidden" onChange={(e) => {
                         const file = e.target.files[0];
                         if (file) {
@@ -303,7 +288,7 @@
                   </div>
 
                   <button onClick={handleSave} className="w-full bg-slate-900 text-white font-black py-5 rounded-[24px] shadow-2xl shadow-slate-200 active:scale-95 transition-transform uppercase tracking-widest text-sm">
-                    {editingIndex >= 0 ? 'Update Design' : 'Upload Design'}
+                    {editingIndex >= 0 ? 'Update Design' : 'Confirm Upload'}
                   </button>
 
                   {editingIndex >= 0 && (
@@ -311,7 +296,7 @@
                       if(!confirm('刪除後無法恢復，確定嗎？')) return;
                       await db.collection('nail_inventory').doc(inventory[editingIndex].docId).delete();
                       setActiveTab('list'); setEditingIndex(-1);
-                    }} className="w-full text-red-500 font-black text-xs pt-2 uppercase tracking-tighter">Delete This Design</button>
+                    }} className="w-full text-red-500 font-black text-xs pt-2 uppercase tracking-widest">Delete 款式</button>
                   )}
                 </div>
               </div>
@@ -326,7 +311,7 @@
                 <span className={`text-[9px] font-black uppercase tracking-tighter ${activeTab === 'list' ? 'text-blue-600' : 'text-slate-300'}`}>Gallery</span>
               </button>
 
-              {/* 中央大按鈕 */}
+              {/* 中央巨大按鈕 */}
               <button onClick={() => { 
                 setActiveTab('add'); 
                 setEditingIndex(-1); 
@@ -342,7 +327,7 @@
                 const headers = ['編號,名稱,甲型,描述,標籤'];
                 const content = [headers, ...inventory.map(i => [i.id, i.name, i.shape, (i.description||"").replace(/,/g,' '), i.hashtags].join(','))].join('\n');
                 const blob = new Blob(['\ufeff' + content], { type: 'text/csv;charset=utf-8;' });
-                const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `Inventory_${new Date().toLocaleDateString()}.csv`; link.click();
+                const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `MyInventory.csv`; link.click();
               }} className="flex flex-col items-center gap-1.5 text-slate-300">
                 <IconUpload />
                 <span className="text-[9px] font-black uppercase tracking-tighter">Export</span>
