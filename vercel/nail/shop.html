@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>指尖造藝 - 專屬穿戴甲</title>
+  
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  
+  <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore-compat.js"></script>
+</head>
+<body class="bg-[#FAF9F8] text-gray-800 font-sans">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const firebaseConfig = {
+      apiKey: "AIzaSyDQZGeeubB8bEUL59v9yt0QBAfIWJcvgnw",
+      authDomain: "nailproject-40022.firebaseapp.com",
+      projectId: "nailproject-40022",
+      storageBucket: "nailproject-40022.firebasestorage.app",
+      messagingSenderId: "1004628981925",
+      appId: "1:1004628981925:web:db01ede0c09f4071d5754c"
+    };
+
+    if (!firebase.apps.length) { firebase.initializeApp(firebaseConfig); }
+    const db = firebase.firestore();
+    
+    const adminUserId = "MvkJo5e1kEcBS0fGGMr4RKdQjYg1"; 
+    const appId = 'nail-inventory-app';
+
+    const SHIPPING_FEE = 60;              
+    const FREE_SHIPPING_THRESHOLD = 1000; 
+    
+    const PROMO_CODES = {
+      'VIP9': { type: 'percent', value: 0.9, name: 'VIP 專屬 9 折' },
+      'SAVE100': { type: 'minus', value: 100, name: '滿額現折 100 元' },
+      'NEWOPEN': { type: 'percent', value: 0.85, name: '歡慶開幕 85 折' }
+    };
+
+    const { useState, useEffect } = React;
+
+    const ProductCard = ({ product, addToCart }) => {
+      const [isHovered, setIsHovered] = useState(false);
+      const [mediaIndex, setMediaIndex] = useState(0);
+
+      useEffect(() => {
+        let interval;
+        if (isHovered && product.media && product.media.length > 1) {
+          interval = setInterval(() => {
+            setMediaIndex(prev => (prev + 1) % product.media.length);
+          }, 1200);
+        } else {
+          setMediaIndex(0);
+        }
+        return () => clearInterval(interval);
+      }, [isHovered, product.media]);
+
+      const currentMedia = product.media?.[mediaIndex];
+
+      return (
+        <div 
+          className="group bg-white p-3 rounded-3xl shadow-sm hover:shadow-xl transition-all duration-300 border border-gray-50 flex flex-col h-full"
+          onMouseEnter={() => setIsHovered(true)}
+          onMouseLeave={() => setIsHovered(false)}
+        >
+          <div className="aspect-[4/5] rounded-2xl overflow-hidden bg-gray-50 mb-4 relative flex-shrink-0">
+            {currentMedia ? (
+              currentMedia.type === 'video' ? (
+                 <video src={currentMedia.url} className={`w-full h-full object-cover transition-transform duration-700 ${isHovered ? 'scale-110' : 'scale-100'}`} autoPlay muted loop playsInline />
+              ) : (
+                 <img src={currentMedia.url} className={`w-full h-full object-cover transition-transform duration-700 ${isHovered ? 'scale-110' : 'scale-100'}`} />
+              )
+            ) : (
+               <div className="w-full h-full flex items-center justify-center text-gray-300">無圖片</div>
+            )}
+            
+            {product.media?.length > 1 && (
+              <div className="absolute bottom-2 left-0 right-0 flex justify-center gap-1">
+                {product.media.map((_, i) => (
+                  <div key={i} className={`w-1.5 h-1.5 rounded-full transition-all ${i === mediaIndex ? 'bg-white scale-125 shadow-sm' : 'bg-white/50'}`}></div>
+                ))}
+              </div>
+            )}
+            {product.shape && <span className="absolute top-3 left-3 bg-white/95 backdrop-blur-sm text-xs font-bold px-2 py-1 rounded-lg shadow-sm text-pink-600">{product.shape}</span>}
+          </div>
+          
+          <div className="px-1 flex-1 flex flex-col">
+            <h3 className="font-black text-gray-900 text-lg mb-1 truncate">{product.name}</h3>
+            {product.description && <p className="text-gray-500 text-xs mb-3 line-clamp-2 leading-relaxed">{product.description}</p>}
+            
+            <div className="mt-auto">
+              <p className="text-pink-600 font-bold text-sm mb-3">NT$ {product.price}</p>
+              <div className="flex gap-2">
+                {['XS', 'S', 'M', 'L'].map(size => {
+                  const inStock = product.stock[size] > 0;
+                  return (
+                    <button 
+                      key={size}
+                      disabled={!inStock}
+                      onClick={() => addToCart(product, size)}
+                      className={`flex-1 py-2 text-xs font-bold rounded-xl border transition-all active:scale-95 ${
+                        inStock 
+                          ? 'border-gray-200 text-gray-700 hover:border-pink-500 hover:bg-pink-50 hover:text-pink-600' 
+                          : 'border-gray-100 text-gray-300 bg-gray-50 cursor-not-allowed'
+                      }`}
+                    >
+                      {size} {inStock ? '' : <span className="block text-[8px] font-normal">售完</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    function Shop() {
+      const [products, setProducts] = useState([]);
+      const [cart, setCart] = useState([]);
+      const [isCartOpen, setIsCartOpen] = useState(false);
+      const [isLoading, setIsLoading] = useState(true);
+      const [isCheckingOut, setIsCheckingOut] = useState(false);
+      
+      const [promoInput, setPromoInput] = useState('');
+      const [appliedPromo, setAppliedPromo] = useState(null);
+
+      const [customerName, setCustomerName] = useState('');
+      const [customerPhone, setCustomerPhone] = useState('');
+      const [shippingAddress, setShippingAddress] = useState('');
+
+      const [isGuideOpen, setIsGuideOpen] = useState(false);
+
+      useEffect(() => {
+        const handleMessage = (event) => {
+          if (event.data && event.data.type === 'ECPAY_MAP_RESULT') {
+            setShippingAddress(`[超商] ${event.data.storeName} (${event.data.storeAddress})`);
+          }
+        };
+        window.addEventListener('message', handleMessage);
+        return () => window.removeEventListener('message', handleMessage);
+      }, []);
+
+      useEffect(() => {
+        if (window.location.search.includes('order=success')) {
+          alert('🎉 結帳成功！系統已收到您的正式訂單！');
+          window.history.replaceState({}, document.title, window.location.pathname);
+          setCart([]);
+        }
+      }, []);
+
+      useEffect(() => {
+        if(!adminUserId) return;
+        const inventoryRef = db.collection('artifacts').doc(appId).collection('users').doc(adminUserId).collection('inventory');
+        const unsubscribe = inventoryRef.onSnapshot((snapshot) => {
+          const dbData = snapshot.docs.map(doc => ({ ...doc.data(), docId: doc.id }));
+          dbData.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+          setProducts(dbData);
+          setIsLoading(false);
+        });
+        return () => unsubscribe();
+      }, []);
+
+      const addToCart = (product, size) => {
+        setCart(prev => {
+          const existing = prev.find(item => item.id === product.id && item.size === size);
+          if (existing) {
+            return prev.map(item => item === existing ? { ...item, quantity: item.quantity + 1 } : item);
+          }
+          return [...prev, { ...product, size, quantity: 1 }];
+        });
+        setIsCartOpen(true);
+      };
+
+      const removeFromCart = (index) => {
+        setCart(prev => prev.filter((_, i) => i !== index));
+      };
+
+      const cartSubtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+      
+      let allPrices = [];
+      cart.forEach(item => { for(let i=0; i<item.quantity; i++) allPrices.push(item.price); });
+      allPrices.sort((a, b) => b - a); 
+      
+      const bundleCount = Math.floor(allPrices.length / 4);
+      let eventDiscountAmount = 0;
+      let isEventFreeShipping = false;
+      
+      if (bundleCount > 0) {
+        let originalBundlePrice = 0;
+        for(let i=0; i < bundleCount * 4; i++) {
+          originalBundlePrice += allPrices[i];
+        }
+        eventDiscountAmount = originalBundlePrice - (bundleCount * 1000);
+        isEventFreeShipping = true;
+      }
+
+      const currentShippingFee = (cartSubtotal === 0 || isEventFreeShipping || cartSubtotal >= FREE_SHIPPING_THRESHOLD) ? 0 : SHIPPING_FEE;
+      const isFreeShipping = currentShippingFee === 0 && cartSubtotal > 0;
+      const amountToFreeShipping = FREE_SHIPPING_THRESHOLD - cartSubtotal;
+
+      let promoDiscountAmount = 0;
+      const subtotalAfterEvent = cartSubtotal - eventDiscountAmount; 
+
+      if (appliedPromo && subtotalAfterEvent > 0) {
+        if (appliedPromo.type === 'percent') {
+          promoDiscountAmount = Math.round(subtotalAfterEvent * (1 - appliedPromo.value));
+        } else if (appliedPromo.type === 'minus') {
+          promoDiscountAmount = appliedPromo.value;
+        }
+      }
+      if (subtotalAfterEvent - promoDiscountAmount < 0) promoDiscountAmount = subtotalAfterEvent;
+
+      const finalTotal = cartSubtotal - eventDiscountAmount - promoDiscountAmount + currentShippingFee;
+
+      const handleApplyPromo = () => {
+        const code = promoInput.toUpperCase().trim();
+        if (!code) return;
+        if (PROMO_CODES[code]) {
+          setAppliedPromo({ ...PROMO_CODES[code], code });
+          setPromoInput('');
+        } else {
+          alert('❌ 無效的優惠碼或已過期');
+          setPromoInput('');
+        }
+      };
+
+      const openMap = (type) => {
+        window.open(`/api/ecpay_map?type=${type}`, 'ecpayMap', 'width=1000,height=700,scrollbars=yes');
+      };
+
+      const handleCheckout = async () => {
+        if (!customerName || !customerPhone || !shippingAddress) {
+          alert('請先填寫收件人姓名、電話，並選擇取件門市喔！');
+          return;
+        }
+
+        setIsCheckingOut(true);
+        try {
+          let itemNamesArr = cart.map(i => `${i.name}(${i.size}) x ${i.quantity}`);
+          if (eventDiscountAmount > 0) itemNamesArr.push(`[活動]任4件1000折抵 x 1`);
+          if (currentShippingFee > 0) itemNamesArr.push(`物流運費 x 1`);
+          if (promoDiscountAmount > 0) itemNamesArr.push(`${appliedPromo.name}折抵 x 1`);
+          
+          // 這裡的 390 是綠界金流限制的「商品名稱總長度」，不是商品的價格唷！
+          const itemNames = itemNamesArr.join('#').substring(0, 390);
+
+          const response = await fetch('/api/ecpay', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              total: finalTotal, items: itemNames,
+              name: customerName, phone: customerPhone, address: shippingAddress
+            }) 
+          });
+          
+          if (!response.ok) throw new Error('結帳連線失敗');
+          const html = await response.text();
+          document.open();
+          document.write(html);
+          document.close();
+        } catch(e) {
+          alert('連線至綠界發生錯誤，請稍後再試！');
+          setIsCheckingOut(false);
+        }
+      };
+
+      return (
+        <div className="min-h-screen relative">
+          <div className="bg-[#e8dad2] text-gray-800 text-[11px] md:text-xs py-1.5 px-5 flex justify-center font-bold tracking-widest uppercase">
+             聯絡我們 : viola.lomography@gmail.com
+          </div>
+
+          <header className="bg-white/80 backdrop-blur-md sticky top-0 z-40 border-b border-gray-100 shadow-sm">
+            <div className="max-w-5xl mx-auto px-5 py-4 flex justify-between items-center">
+              
+              {/* ✨ 更新的 Logo 與 品牌名稱 ✨ */}
+              <div className="flex items-center gap-3 md:gap-6">
+                <div className="flex items-center gap-3">
+                  <img 
+                    src="freepik__logo__19488.jpg" 
+                    alt="指尖造藝 Logo" 
+                    className="w-10 h-10 md:w-12 md:h-12 rounded-full object-cover shadow-sm border border-pink-100" 
+                  />
+                  <h1 className="text-xl md:text-2xl font-black tracking-widest text-gray-900">指尖造藝</h1>
+                </div>
+                
+                <button onClick={() => setIsGuideOpen(true)} className="hidden md:block text-sm font-bold text-gray-500 hover:text-pink-500 transition-colors">
+                  📏 尺寸與穿戴教學
+                </button>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <button onClick={() => setIsGuideOpen(true)} className="md:hidden text-sm font-bold text-gray-500 hover:text-pink-500 bg-gray-50 px-3 py-2 rounded-full shadow-sm border border-gray-100">
+                  教學
+                </button>
+
+                <button onClick={() => setIsCartOpen(true)} className="relative p-2 flex items-center gap-2 font-bold text-gray-700 hover:text-pink-500 transition-colors bg-white rounded-full">
+                  <span className="text-xl">🛒</span> 
+                  <span className="hidden sm:inline">購物車</span>
+                  {cart.length > 0 && (
+                    <span className="absolute -top-1 -right-1 bg-pink-500 text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center shadow-md animate-bounce">
+                      {cart.length}
+                    </span>
+                  )}
+                </button>
+              </div>
+            </div>
+          </header>
+
+          <main className="max-w-5xl mx-auto px-5 py-10">
+            {isLoading ? (
+               <div className="text-center py-20 text-gray-400 font-bold flex flex-col items-center gap-3">
+                 <div className="w-8 h-8 border-4 border-pink-200 border-t-pink-500 rounded-full animate-spin"></div>
+                 店面佈置中...
+               </div>
+            ) : products.length === 0 ? (
+               <div className="text-center py-20 text-gray-500 bg-white rounded-3xl shadow-sm border border-gray-100">
+                  <div className="text-6xl mb-4">🏪</div>
+                  <h2 className="text-2xl font-bold mb-2">倉庫目前空空如也</h2>
+                  <p>請到您的後台建檔，商品就會立刻在這裡上架囉！</p>
+               </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-8">
+                {products.map(product => (
+                  <ProductCard key={product.id} product={product} addToCart={addToCart} />
+                ))}
+              </div>
+            )}
+          </main>
+
+          {isGuideOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+              <div className="absolute inset-0 bg-black/50 backdrop-blur-sm transition-opacity" onClick={() => setIsGuideOpen(false)}></div>
+              <div className="bg-white rounded-3xl w-full max-w-2xl max-h-[85vh] overflow-y-auto relative z-10 shadow-2xl p-6 md:p-10 animate-fade-in-up">
+                <button onClick={() => setIsGuideOpen(false)} className="absolute top-4 right-4 w-10 h-10 flex items-center justify-center bg-gray-100 hover:bg-gray-200 rounded-full font-bold text-gray-600 transition-colors">✕</button>
+                
+                <h2 className="text-2xl font-black mb-6 text-gray-900 border-b-2 border-pink-100 pb-4">📏 尺寸測量與穿戴教學</h2>
+                
+                <div className="space-y-8 text-gray-700 leading-relaxed">
+                  <section>
+                    <h3 className="text-lg font-bold text-pink-600 mb-3 flex items-center gap-2"><span className="bg-pink-100 px-2 py-1 rounded-lg text-sm">Step 1</span> 如何測量您的本甲尺寸？</h3>
+                    <p className="text-sm bg-gray-50 p-4 rounded-xl border border-gray-100 mb-4">
+                      💡 準備軟尺（或一般膠帶與直尺），沿著指甲最寬處的弧度平貼測量（請勿用力下壓）。
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                      <div className="bg-white border border-gray-200 p-3 rounded-xl"><span className="font-bold text-gray-900 block mb-1">🎀 XS 尺寸</span>拇指 14mm / 食指 10mm<br/>中指 11mm / 無名指 10mm<br/>小指 7mm</div>
+                      <div className="bg-white border border-gray-200 p-3 rounded-xl"><span className="font-bold text-gray-900 block mb-1">🎀 S 尺寸</span>拇指 15mm / 食指 11mm<br/>中指 12mm / 無名指 11mm<br/>小指 8mm</div>
+                      <div className="bg-white border border-gray-200 p-3 rounded-xl"><span className="font-bold text-gray-900 block mb-1">🎀 M 尺寸</span>拇指 16mm / 食指 12mm<br/>中指 13mm / 無名指 12mm<br/>小指 9mm</div>
+                      <div className="bg-white border border-gray-200 p-3 rounded-xl"><span className="font-bold text-gray-900 block mb-1">🎀 L 尺寸</span>拇指 17mm / 食指 13mm<br/>中指 14mm / 無名指 13mm<br/>小指 10mm</div>
+                    </div>
+                  </section>
+                  
+                  <section>
+                    <h3 className="text-lg font-bold text-pink-600 mb-3 flex items-center gap-2"><span className="bg-pink-100 px-2 py-1 rounded-lg text-sm">Step 2</span> 正確穿戴步驟</h3>
+                    <ol className="space-y-3 text-sm">
+                      <li className="flex gap-3"><span className="w-6 h-6 rounded-full bg-gray-900 text-white flex items-center justify-center font-bold shrink-0">1</span><div><span className="font-bold text-gray-900">清潔：</span>使用酒精棉片徹底擦拭本甲，去除表面油脂與水分。</div></li>
+                      <li className="flex gap-3"><span className="w-6 h-6 rounded-full bg-gray-900 text-white flex items-center justify-center font-bold shrink-0">2</span><div><span className="font-bold text-gray-900">打磨 (選用)：</span>使用海綿拋稍微打磨本甲表面，可大幅增加果凍膠附著力。</div></li>
+                      <li className="flex gap-3"><span className="w-6 h-6 rounded-full bg-gray-900 text-white flex items-center justify-center font-bold shrink-0">3</span><div><span className="font-bold text-gray-900">貼膠：</span>選擇適合大小的果凍膠貼於本甲，稍微用力按壓擠出裡面的空氣。</div></li>
+                      <li className="flex gap-3"><span className="w-6 h-6 rounded-full bg-gray-900 text-white flex items-center justify-center font-bold shrink-0">4</span><div><span className="font-bold text-gray-900">穿戴：</span>將穿戴甲以 45 度角，從指甲根部向指尖方向推平貼合，並持續用力按壓 15 秒即可！</div></li>
+                    </ol>
+                  </section>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {isCartOpen && (
+            <div className="fixed inset-0 z-50 flex justify-end">
+              <div className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity" onClick={() => setIsCartOpen(false)}></div>
+              <div className="w-full max-w-md bg-white h-full relative flex flex-col shadow-2xl animate-fade-in-right">
+                
+                <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+                  <h2 className="text-xl font-black flex items-center gap-2"><span className="text-2xl">🛍️</span> 購物車清單</h2>
+                  <button onClick={() => setIsCartOpen(false)} className="w-8 h-8 flex items-center justify-center bg-gray-200 hover:bg-gray-300 rounded-full transition-colors font-bold text-gray-600">✕</button>
+                </div>
+
+                <div className="bg-pink-50 px-6 py-3 text-sm font-bold text-center border-b border-pink-100">
+                  {cartSubtotal === 0 ? (
+                    <span className="text-pink-600">🎊 開幕慶：全館任 4 件 1000 元 (享免運)</span>
+                  ) : isEventFreeShipping ? (
+                    <span className="text-pink-600">🎉 已達【任4件1000元】優惠，並享結帳免運！</span>
+                  ) : isFreeShipping ? (
+                    <span className="text-green-600">🎉 已達滿額免運門檻！再湊滿 4 件享 1000 元</span>
+                  ) : (
+                    <span className="text-pink-600">還差 <span className="font-black">NT$ {amountToFreeShipping}</span> 免運 🚚 (或湊滿4件享1000元含運)</span>
+                  )}
+                </div>
+                
+                <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                  {cart.length === 0 ? (
+                    <div className="text-gray-400 text-center py-20 flex flex-col items-center gap-4">
+                      <span className="text-6xl opacity-50">🛒</span>
+                      <p className="font-bold">購物車目前是空的喔</p>
+                    </div>
+                  ) : (
+                    cart.map((item, idx) => (
+                      <div key={idx} className="flex gap-4 border-b border-gray-100 pb-6 group">
+                        <img src={item.media?.[0]?.url || ''} className="w-24 h-32 object-cover rounded-2xl shadow-sm" />
+                        <div className="flex-1 flex flex-col justify-between py-1">
+                          <div>
+                            <div className="flex justify-between items-start">
+                              <h4 className="font-bold text-gray-900 text-lg leading-tight">{item.name}</h4>
+                              <button onClick={() => removeFromCart(idx)} className="text-red-400 text-xs font-bold hover:text-red-600 bg-red-50 px-2 py-1 rounded-lg transition-colors">移除</button>
+                            </div>
+                            <span className="inline-block bg-gray-100 text-gray-600 text-xs font-bold px-2 py-1 rounded-md mt-2">尺寸：{item.size}</span>
+                          </div>
+                          <div className="flex justify-between items-end">
+                            <span className="text-gray-500 text-sm font-bold bg-gray-50 px-3 py-1 rounded-lg">數量 x {item.quantity}</span>
+                            <span className="font-black text-pink-600 text-lg">NT$ {item.price * item.quantity}</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+
+                  {cart.length > 0 && (
+                    <div className="bg-white border-2 border-gray-100 p-4 rounded-2xl shadow-sm mt-4">
+                      <h3 className="font-bold text-gray-900 text-base mb-3 border-b pb-2">📦 取貨資訊</h3>
+                      <input type="text" placeholder="真實姓名 (取貨核對用)" value={customerName} onChange={e => setCustomerName(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm outline-none mb-3 bg-gray-50 focus:bg-white focus:border-pink-300 transition-colors" />
+                      <input type="tel" placeholder="手機號碼" value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm outline-none mb-3 bg-gray-50 focus:bg-white focus:border-pink-300 transition-colors" />
+                      
+                      <div className="flex gap-2 mb-3">
+                        <button onClick={() => openMap('UNIMARTC2C')} className="flex-1 bg-[#008061] hover:bg-[#00664e] text-white text-xs font-bold py-3 rounded-xl shadow-sm transition-colors">🏪 選擇 7-11 門市</button>
+                        <button onClick={() => openMap('FAMIC2C')} className="flex-1 bg-[#00A1E9] hover:bg-[#0082bc] text-white text-xs font-bold py-3 rounded-xl shadow-sm transition-colors">🏪 選擇全家門市</button>
+                      </div>
+                      
+                      <textarea placeholder="點擊上方按鈕選擇超商，或手動填寫宅配地址" value={shippingAddress} onChange={e => setShippingAddress(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-pink-200 text-sm font-bold text-pink-700 outline-none bg-pink-50 resize-none h-16"></textarea>
+                    </div>
+                  )}
+
+                </div>
+
+                <div className="p-6 bg-white border-t border-gray-100 shadow-[0_-10px_20px_rgba(0,0,0,0.03)]">
+                  <div className="mb-4">
+                    {appliedPromo ? (
+                      <div className="flex justify-between items-center bg-green-50 px-4 py-3 rounded-xl border border-green-100">
+                        <div>
+                          <span className="text-green-700 font-bold text-sm">✅ 已套用：{appliedPromo.name}</span>
+                        </div>
+                        <button onClick={() => setAppliedPromo(null)} className="text-xs font-bold text-gray-400 hover:text-red-500">取消</button>
+                      </div>
+                    ) : (
+                      <div className="flex gap-2">
+                        <input 
+                          type="text" 
+                          placeholder="輸入優惠碼 (如 VIP9)" 
+                          value={promoInput}
+                          onChange={(e) => setPromoInput(e.target.value)}
+                          className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 text-sm font-bold outline-none uppercase"
+                        />
+                        <button onClick={handleApplyPromo} className="bg-gray-900 text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-gray-800">套用</button>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-2 mb-6 border-t border-gray-100 pt-4 text-sm font-bold text-gray-500">
+                    <div className="flex justify-between">
+                      <span>商品小計</span><span>NT$ {cartSubtotal}</span>
+                    </div>
+                    
+                    {eventDiscountAmount > 0 && (
+                      <div className="flex justify-between text-pink-500">
+                        <span>🎊 開幕活動 (任 4 件 1000)</span><span>- NT$ {eventDiscountAmount}</span>
+                      </div>
+                    )}
+
+                    <div className="flex justify-between">
+                      <span>物流運費</span>
+                      {isFreeShipping ? <span className="text-green-500">免運費</span> : <span>NT$ {currentShippingFee}</span>}
+                    </div>
+
+                    {promoDiscountAmount > 0 && (
+                      <div className="flex justify-between text-pink-500">
+                        <span>優惠碼折抵 ({appliedPromo?.code})</span><span>- NT$ {promoDiscountAmount}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between items-center pt-3 border-t border-gray-100 mt-2">
+                      <span className="text-gray-900 text-base">結帳總金額</span>
+                      <span className="text-3xl font-black text-pink-600">NT$ {finalTotal}</span>
+                    </div>
+                  </div>
+
+                  <button 
+                    disabled={cart.length === 0 || isCheckingOut}
+                    onClick={handleCheckout}
+                    className="w-full bg-gray-900 text-white py-4 rounded-2xl font-black text-lg hover:bg-gray-800 disabled:bg-gray-200 disabled:text-gray-400 transition-all shadow-xl active:scale-[0.98] flex justify-center items-center gap-2"
+                  >
+                    {isCheckingOut ? '連線綠界金流中... ⏳' : '確認結帳 💳'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+          <style dangerouslySetInnerHTML={{__html: ` 
+            .animate-fade-in-right { animation: fadeInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; } 
+            @keyframes fadeInRight { from { opacity: 0; transform: translateX(100%); } to { opacity: 1; transform: translateX(0); } } 
+            
+            /* ✨ 教學視窗的滑動浮現動畫 */
+            .animate-fade-in-up { animation: fadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+            @keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+          `}} />
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<Shop />);
+  </script>
+</body>
+</html>
