@@ -246,7 +246,6 @@
           if (currentShippingFee > 0) itemNamesArr.push(`物流運費 x 1`);
           if (promoDiscountAmount > 0) itemNamesArr.push(`${appliedPromo.name}折抵 x 1`);
           
-          // 這裡的 390 是綠界金流限制的「商品名稱總長度」，不是商品的價格唷！
           const itemNames = itemNamesArr.join('#').substring(0, 390);
 
           const response = await fetch('/api/ecpay', {
@@ -281,8 +280,9 @@
               {/* ✨ 更新的 Logo 與 品牌名稱 ✨ */}
               <div className="flex items-center gap-3 md:gap-6">
                 <div className="flex items-center gap-3">
+                  {/* 已經將這裡的圖片檔名改為與您 GitHub 上傳的完全一致 */}
                   <img 
-                    src="freepik__logo_19488.jpg" 
+                    src="freepik_logo_19488.png" 
                     alt="指尖造藝 Logo" 
                     className="w-10 h-10 md:w-12 md:h-12 rounded-full object-cover shadow-sm border border-pink-100" 
                   />
