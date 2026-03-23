@@ -5,11 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>指尖造藝 - 專屬穿戴甲</title>
   
-  <!-- 效能優化：預先解析 CDN 節點，加速資源載入 -->
   <link rel="preconnect" href="https://cdn.tailwindcss.com">
   <link rel="preconnect" href="https://unpkg.com">
   <link rel="preconnect" href="https://www.gstatic.com">
-  <link rel="preconnect" href="https://firebasestorage.googleapis.com">
   
   <script src="https://cdn.tailwindcss.com"></script>
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -21,11 +19,11 @@
 </head>
 <body class="bg-[#FAF9F8] text-gray-800 font-sans">
   
-  <!-- 效能優化：加入首屏預載入動畫，提升體感速度，React 載入完成後會自動取代此區塊 -->
+  <!-- 預載入動畫：讓使用者在等待 Firebase 超大資料包時不至於看著白畫面 -->
   <div id="root">
     <div style="display:flex; height:100vh; align-items:center; justify-content:center; flex-direction:column; font-family:sans-serif; color:#ec4899; background:#FAF9F8;">
        <div style="width: 40px; height: 40px; border: 4px solid #fce7f3; border-top: 4px solid #ec4899; border-radius: 50%; animation: spin 1s linear infinite;"></div>
-       <div style="margin-top: 16px; font-weight: bold; letter-spacing: 2px;">指尖造藝 載入中...</div>
+       <div style="margin-top: 16px; font-weight: bold; letter-spacing: 2px;">店面佈置中，請稍候...</div>
        <style>@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }</style>
     </div>
   </div>
@@ -57,7 +55,7 @@
 
     const { useState, useEffect, useCallback, memo } = React;
 
-    // 效能優化：使用 React.memo 避免不必要的重複渲染
+    // 效能優化：使用 React.memo 避免滑動時重複渲染已經畫好的商品卡片
     const ProductCard = memo(({ product, addToCart }) => {
       const [isHovered, setIsHovered] = useState(false);
       const [mediaIndex, setMediaIndex] = useState(0);
@@ -78,7 +76,7 @@
 
       return (
         <div 
-          className="group bg-white p-3 rounded-3xl shadow-sm hover:shadow-xl transition-all duration-300 border border-gray-50 flex flex-col h-full"
+          className="group bg-white p-3 rounded-3xl shadow-sm hover:shadow-xl transition-all duration-300 border border-gray-50 flex flex-col h-full animate-fade-in-up"
           onMouseEnter={() => setIsHovered(true)}
           onMouseLeave={() => setIsHovered(false)}
         >
@@ -87,8 +85,8 @@
               currentMedia.type === 'video' ? (
                  <video src={currentMedia.url} className={`w-full h-full object-cover transition-transform duration-700 ${isHovered ? 'scale-110' : 'scale-100'}`} autoPlay muted loop playsInline />
               ) : (
-                 // 效能優化：加入 loading="lazy" 與 decoding="async"
-                 <img src={currentMedia.url} loading="lazy" decoding="async" alt={product.name} className={`w-full h-full object-cover transition-transform duration-700 ${isHovered ? 'scale-110' : 'scale-100'}`} />
+                 // 加上 lazy loading 減輕初始渲染負擔
+                 <img src={currentMedia.url} loading="lazy" decoding="async" className={`w-full h-full object-cover transition-transform duration-700 ${isHovered ? 'scale-110' : 'scale-100'}`} alt={product.name} />
               )
             ) : (
                <div className="w-full h-full flex items-center justify-center text-gray-300">無圖片</div>
@@ -137,6 +135,9 @@
 
     function Shop() {
       const [products, setProducts] = useState([]);
+      // 效能優化：控制畫面上顯示的商品數量，不要一次全部畫出來
+      const [visibleCount, setVisibleCount] = useState(8);
+      
       const [cart, setCart] = useState([]);
       const [isCartOpen, setIsCartOpen] = useState(false);
       const [isLoading, setIsLoading] = useState(true);
@@ -174,6 +175,7 @@
         const inventoryRef = db.collection('artifacts').doc(appId).collection('users').doc(adminUserId).collection('inventory');
         const unsubscribe = inventoryRef.onSnapshot((snapshot) => {
           const dbData = snapshot.docs.map(doc => ({ ...doc.data(), docId: doc.id }));
+          // 在記憶體中排序最新商品
           dbData.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
           setProducts(dbData);
           setIsLoading(false);
@@ -181,7 +183,6 @@
         return () => unsubscribe();
       }, []);
 
-      // 效能優化：使用 useCallback 記憶函數，避免子元件重複渲染
       const addToCart = useCallback((product, size) => {
         setCart(prev => {
           const existing = prev.find(item => item.id === product.id && item.size === size);
@@ -195,6 +196,10 @@
 
       const removeFromCart = (index) => {
         setCart(prev => prev.filter((_, i) => i !== index));
+      };
+
+      const loadMore = () => {
+        setVisibleCount(prev => prev + 8);
       };
 
       const cartSubtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
@@ -285,8 +290,11 @@
         }
       };
 
+      // 計算目前要顯示的商品
+      const displayedProducts = products.slice(0, visibleCount);
+
       return (
-        <div className="min-h-screen relative">
+        <div className="min-h-screen relative pb-10">
           <div className="bg-[#e8dad2] text-gray-800 text-[11px] md:text-xs py-1.5 px-5 flex justify-center font-bold tracking-widest uppercase">
              聯絡我們 : viola.lomography@gmail.com
           </div>
@@ -331,7 +339,7 @@
             {isLoading ? (
                <div className="text-center py-20 text-gray-400 font-bold flex flex-col items-center gap-3">
                  <div className="w-8 h-8 border-4 border-pink-200 border-t-pink-500 rounded-full animate-spin"></div>
-                 商品資料讀取中...
+                 商品圖檔載入中...<br/><span className="text-xs text-gray-300">初次載入可能需要數秒鐘</span>
                </div>
             ) : products.length === 0 ? (
                <div className="text-center py-20 text-gray-500 bg-white rounded-3xl shadow-sm border border-gray-100">
@@ -340,11 +348,30 @@
                   <p>請到您的後台建檔，商品就會立刻在這裡上架囉！</p>
                </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-8">
-                {products.map(product => (
-                  <ProductCard key={product.id} product={product} addToCart={addToCart} />
-                ))}
-              </div>
+              <>
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-8">
+                  {displayedProducts.map(product => (
+                    <ProductCard key={product.id} product={product} addToCart={addToCart} />
+                  ))}
+                </div>
+                
+                {/* 載入更多按鈕 */}
+                {products.length > visibleCount && (
+                  <div className="mt-12 flex justify-center">
+                    <button 
+                      onClick={loadMore}
+                      className="bg-white border-2 border-pink-100 text-pink-600 font-bold py-3 px-8 rounded-full hover:bg-pink-50 hover:border-pink-300 transition-all shadow-sm flex items-center gap-2"
+                    >
+                      載入更多款式 👇
+                    </button>
+                  </div>
+                )}
+                {products.length <= visibleCount && products.length > 0 && (
+                  <div className="mt-12 text-center text-gray-400 font-bold text-sm">
+                    已經到底囉！🎉
+                  </div>
+                )}
+              </>
             )}
           </main>
 
@@ -381,18 +408,15 @@
                     </ol>
                   </section>
 
-                  {/* 新增的流程圖區塊 */}
+                  {/* 第三張圖片的流程圖區塊 */}
                   <section>
                     <h3 className="text-lg font-bold text-pink-600 mb-4 flex items-center gap-2">
                        <span className="bg-pink-100 px-2 py-1 rounded-lg text-sm">Step 3</span> 純手工定製美甲流程
                     </h3>
                     
-                    {/* 流程圖背景與樣式設計 */}
                     <div className="bg-gradient-to-b from-[#f8ece3] to-[#efdfd2] p-8 rounded-[2rem] relative overflow-hidden shadow-inner">
-                       {/* 背景裝飾葉片/光影 */}
                        <div className="absolute top-0 right-0 w-32 h-32 bg-white/20 rounded-full blur-3xl transform translate-x-10 -translate-y-10 pointer-events-none"></div>
                        
-                       {/* 標題區 */}
                        <div className="text-center mb-8 relative z-10">
                           <h4 className="text-2xl font-black text-[#4a4036] tracking-widest mb-2">純手工定制美甲</h4>
                           <div className="w-16 h-1 bg-[#d3bca8] mx-auto mb-4 rounded-full"></div>
@@ -401,53 +425,52 @@
                           </p>
                        </div>
 
-                       {/* 步驟泡泡圖區塊 (交錯排列) */}
                        <div className="flex flex-col gap-4 max-w-[280px] mx-auto relative z-10">
                           {/* 1 */}
                           <div className="flex justify-start">
-                             <div className="bg-[#8ab56e] text-white px-6 py-3 rounded-[2rem] rounded-bl-md shadow-md flex items-center gap-2 transform hover:-translate-y-1 transition-transform">
+                             <div className="bg-[#8ab56e] text-white px-6 py-3 rounded-[2rem] rounded-bl-md shadow-md flex items-center gap-2">
                                 <span className="text-2xl font-black italic opacity-90 pr-1">1/</span>
                                 <span className="font-bold tracking-widest text-base">甲片打磨</span>
                              </div>
                           </div>
                           {/* 2 */}
                           <div className="flex justify-end">
-                             <div className="bg-[#b3d3b7] text-white px-6 py-3 rounded-[2rem] rounded-br-md shadow-md flex items-center gap-2 transform hover:-translate-y-1 transition-transform">
+                             <div className="bg-[#b3d3b7] text-white px-6 py-3 rounded-[2rem] rounded-br-md shadow-md flex items-center gap-2">
                                 <span className="font-bold tracking-widest text-base">吻合劑</span>
                                 <span className="text-2xl font-black italic opacity-90 pl-1">/2</span>
                              </div>
                           </div>
                           {/* 3 */}
                           <div className="flex justify-start">
-                             <div className="bg-[#668bd4] text-white px-6 py-3 rounded-[2rem] rounded-bl-md shadow-md flex items-center gap-2 transform hover:-translate-y-1 transition-transform">
+                             <div className="bg-[#668bd4] text-white px-6 py-3 rounded-[2rem] rounded-bl-md shadow-md flex items-center gap-2">
                                 <span className="text-2xl font-black italic opacity-90 pr-1">3/</span>
                                 <span className="font-bold tracking-widest text-base">底膠</span>
                              </div>
                           </div>
                           {/* 4 */}
                           <div className="flex justify-end">
-                             <div className="bg-[#6eb25b] text-white px-6 py-3 rounded-[2rem] rounded-br-md shadow-md flex items-center gap-2 transform hover:-translate-y-1 transition-transform">
+                             <div className="bg-[#6eb25b] text-white px-6 py-3 rounded-[2rem] rounded-br-md shadow-md flex items-center gap-2">
                                 <span className="font-bold tracking-widest text-base">多層顏色<br/><span className="text-sm">甲油膠</span></span>
                                 <span className="text-2xl font-black italic opacity-90 pl-1 self-end">/4</span>
                              </div>
                           </div>
                           {/* 5 */}
                           <div className="flex justify-start">
-                             <div className="bg-[#bce0bf] text-white px-6 py-3 rounded-[2rem] rounded-bl-md shadow-md flex items-center gap-2 transform hover:-translate-y-1 transition-transform">
+                             <div className="bg-[#bce0bf] text-white px-6 py-3 rounded-[2rem] rounded-bl-md shadow-md flex items-center gap-2">
                                 <span className="text-2xl font-black italic opacity-90 pr-1">5/</span>
                                 <span className="font-bold tracking-widest text-base">飾品膠</span>
                              </div>
                           </div>
                           {/* 6 */}
                           <div className="flex justify-end">
-                             <div className="bg-[#618bcf] text-white px-6 py-3 rounded-[2rem] rounded-br-md shadow-md flex items-center gap-2 transform hover:-translate-y-1 transition-transform">
+                             <div className="bg-[#618bcf] text-white px-6 py-3 rounded-[2rem] rounded-br-md shadow-md flex items-center gap-2">
                                 <span className="font-bold tracking-widest text-base">加固膠</span>
                                 <span className="text-2xl font-black italic opacity-90 pl-1">/6</span>
                              </div>
                           </div>
                           {/* 7 */}
                           <div className="flex justify-start">
-                             <div className="bg-[#7bb75e] text-white px-6 py-3 rounded-[2rem] rounded-bl-md shadow-md flex items-center gap-2 transform hover:-translate-y-1 transition-transform">
+                             <div className="bg-[#7bb75e] text-white px-6 py-3 rounded-[2rem] rounded-bl-md shadow-md flex items-center gap-2">
                                 <span className="text-2xl font-black italic opacity-90 pr-1">7/</span>
                                 <span className="font-bold tracking-widest text-base">耐磨封層</span>
                              </div>
