@@ -14,7 +14,6 @@
   <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-auth-compat.js"></script>
-  <!-- [新增] 引入 Firebase Storage 服務 -->
   <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-storage-compat.js"></script>
   
   <!-- PapaParse for CSV -->
@@ -36,9 +35,9 @@
     if (!firebase.apps.length) { firebase.initializeApp(firebaseConfig); }
     const auth = firebase.auth();
     const db = firebase.firestore();
-    // [新增] 初始化 Storage
     const storage = firebase.storage(); 
     const appId = 'nail-inventory-app';
+    const adminUserId = "MvkJo5e1kEcBS0fGGMr4RKdQjYg1";
 
     const { useState, useRef, useEffect, useMemo } = React;
 
@@ -54,7 +53,6 @@
       );
     };
 
-    // 保留您原本超棒的壓縮功能！這能在上傳到 Storage 前先縮小檔案，節省雲端空間與顧客流量
     const compressImage = (file, maxResolution = 800) => {
       return new Promise((resolve) => {
         const reader = new FileReader();
@@ -76,18 +74,12 @@
       });
     };
 
-    // [新增] 專門將壓縮後的 Base64 轉換並上傳至 Firebase Storage 的小工具
     const uploadBase64ToStorage = async (base64String, fileNamePrefix) => {
       const storageRef = storage.ref();
-      // 使用時間戳記加上隨機字串作為檔名，避免覆蓋
       const fileName = `products/${Date.now()}_${fileNamePrefix}_${Math.random().toString(36).substr(2, 5)}.jpg`;
       const fileRef = storageRef.child(fileName);
-      
-      // 將 Base64 轉回實體檔案 (Blob)
       const response = await fetch(base64String);
       const blob = await response.blob();
-      
-      // 上傳至 Storage 並取得短網址
       await fileRef.put(blob);
       return await fileRef.getDownloadURL();
     };
@@ -136,7 +128,7 @@
           return; 
         }
         setIsLoadingDB(true);
-        const inventoryRef = db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('inventory');
+        const inventoryRef = db.collection('artifacts').doc(appId).collection('users').doc(adminUserId).collection('inventory');
         
         const unsubscribeDB = inventoryRef.onSnapshot((snapshot) => {
           const dbData = snapshot.docs.map(doc => ({ ...doc.data(), docId: doc.id }));
@@ -145,7 +137,7 @@
           setIsLoadingDB(false);
         }, (err) => {
           console.error("Firestore Error:", err);
-          showToast("資料讀取失敗，請檢查權限", "error");
+          showToast("資料庫讀取失敗，請檢查權限", "error");
           setIsLoadingDB(false);
         });
         return () => unsubscribeDB();
@@ -158,7 +150,7 @@
           formData: {
             id: nextId,
             name: '',
-            price: 390, // 預設價格
+            price: 390,
             description: '',
             shape: '',
             hashtags: '',
@@ -207,15 +199,14 @@
         });
       };
 
-      // [修改] 草稿上傳：先壓縮，再傳到 Storage 拿網址
       const handleDraftPhotoSelect = async (uid, e) => {
         const files = e.target.files; if (!files.length) return;
         showToast("雲端上傳中，請稍候...", "info");
         
         try {
           const newMedia = await Promise.all(Array.from(files).map(async (f) => {
-            const compressedBase64 = await compressImage(f, 800); // 先壓縮
-            const downloadUrl = await uploadBase64ToStorage(compressedBase64, 'draft'); // 傳到雲端
+            const compressedBase64 = await compressImage(f, 800);
+            const downloadUrl = await uploadBase64ToStorage(compressedBase64, 'draft');
             return { id: Math.random().toString(36).substr(2, 9), url: downloadUrl, type: 'image' };
           }));
           
@@ -239,7 +230,7 @@
         try {
           const batch = db.batch();
           for (const draft of drafts) {
-            const docRef = db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('inventory').doc(draft.formData.id);
+            const docRef = db.collection('artifacts').doc(appId).collection('users').doc(adminUserId).collection('inventory').doc(draft.formData.id);
             batch.set(docRef, { 
               ...draft.formData, 
               createdAt: new Date().toISOString() 
@@ -257,7 +248,7 @@
         if (!item) return;
         const newStock = { ...item.stock, [size]: Math.max(0, (item.stock[size] || 0) + delta) };
         try {
-          await db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('inventory').doc(itemId).update({ stock: newStock });
+          await db.collection('artifacts').doc(appId).collection('users').doc(adminUserId).collection('inventory').doc(itemId).update({ stock: newStock });
         } catch (e) { showToast("修改失敗", "error"); }
       };
 
@@ -266,7 +257,6 @@
         (i.name || '').toLowerCase().includes(scanQuery.toLowerCase())
       );
 
-      // [修改] 編輯上傳：先壓縮，再傳到 Storage 拿網址
       const handleEditMediaUpload = async (e) => {
         const files = e.target.files; if (!files.length) return;
         showToast("雲端上傳中，請稍候...", "info");
@@ -462,7 +452,6 @@
                             </div>
 
                             <div className="space-y-4">
-                              {/* [恢復] 這裡幫您把價格欄位加回來，並排在名稱旁邊 */}
                               <div className="grid grid-cols-2 gap-4">
                                 <div>
                                   <label className="block text-[10px] font-black text-gray-400 mb-1 uppercase tracking-widest">款式名稱</label>
@@ -551,7 +540,6 @@
                    </div>
 
                    <div className="space-y-5">
-                      {/* [恢復] 修改視窗中的價格欄位 */}
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div className="md:col-span-2">
                           <label className="block text-[10px] font-black text-gray-400 mb-1">款式名稱</label>
@@ -595,8 +583,8 @@
                    </div>
 
                    <div className="flex gap-4 pt-4">
-                      <button onClick={async () => { if(confirm('確定要永久刪除此款式嗎？')) { await db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('inventory').doc(editingItem.id).delete(); setEditingItem(null); showToast('已成功刪除'); } }} className="flex-1 bg-red-50 text-red-500 py-4 rounded-2xl font-black text-sm hover:bg-red-500 hover:text-white transition-all">🗑️ 刪除</button>
-                      <button onClick={async () => { await db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('inventory').doc(editingItem.id).update(editingItem); setEditingItem(null); showToast('已儲存變更'); }} className="flex-[2] bg-gray-900 text-white py-4 rounded-2xl font-black shadow-2xl hover:bg-black transition-all active:scale-95">💾 儲存並關閉</button>
+                      <button onClick={async () => { if(confirm('確定要永久刪除此款式嗎？')) { await db.collection('artifacts').doc(appId).collection('users').doc(adminUserId).collection('inventory').doc(editingItem.id).delete(); setEditingItem(null); showToast('已成功刪除'); } }} className="flex-1 bg-red-50 text-red-500 py-4 rounded-2xl font-black text-sm hover:bg-red-500 hover:text-white transition-all">🗑️ 刪除</button>
+                      <button onClick={async () => { await db.collection('artifacts').doc(appId).collection('users').doc(adminUserId).collection('inventory').doc(editingItem.id).update(editingItem); setEditingItem(null); showToast('已儲存變更'); }} className="flex-[2] bg-gray-900 text-white py-4 rounded-2xl font-black shadow-2xl hover:bg-black transition-all active:scale-95">💾 儲存並關閉</button>
                    </div>
                 </div>
               </div>
