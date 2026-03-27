@@ -23,6 +23,10 @@
       .preloader-spinner { width: 50px; height: 50px; border: 4px solid rgba(236, 72, 153, 0.1); border-left-color: #ec4899; border-radius: 50%; animation: spin 1s linear infinite; }
       @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
       .preloader-text { margin-top: 16px; color: #9ca3af; font-family: sans-serif; font-weight: bold; font-size: 14px; letter-spacing: 2px; }
+      
+      /* 隱藏甲型分類條的捲軸 */
+      .hide-scrollbar::-webkit-scrollbar { display: none; }
+      .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
     </style>
     <div class="preloader">
       <div class="preloader-spinner"></div>
@@ -55,7 +59,10 @@
       'NEWOPEN': { type: 'percent', value: 0.85, name: '歡慶開幕 85 折' }
     };
 
-    const { useState, useEffect } = React;
+    // 甲型分類列表
+    const NAIL_SHAPES = ['全部', '短橢圓', '中橢圓', '長橢圓', '細狗尖', '杏仁甲', '短圓', '新中方', '短梯', '中梯', '長梯', '超長梯', '長水滴'];
+
+    const { useState, useEffect, useMemo } = React;
 
     const ProductCard = ({ product, addToCart }) => {
       const [isHovered, setIsHovered] = useState(false);
@@ -135,7 +142,8 @@
 
     function Shop() {
       const [products, setProducts] = useState([]);
-      const [visibleCount, setVisibleCount] = useState(8); // 前端分批渲染控制參數
+      const [visibleCount, setVisibleCount] = useState(8); 
+      const [selectedShape, setSelectedShape] = useState('全部'); // 新增：當前選擇的甲型
       
       const [cart, setCart] = useState([]);
       const [isCartOpen, setIsCartOpen] = useState(false);
@@ -180,6 +188,18 @@
         });
         return () => unsubscribe();
       }, []);
+
+      // 過濾商品邏輯
+      const filteredProducts = useMemo(() => {
+        if (selectedShape === '全部') return products;
+        return products.filter(p => p.shape === selectedShape);
+      }, [products, selectedShape]);
+
+      // 處理甲型切換
+      const handleShapeChange = (shape) => {
+        setSelectedShape(shape);
+        setVisibleCount(8); // 切換分類時重置載入數量
+      };
 
       const addToCart = (product, size) => {
         setCart(prev => {
@@ -340,23 +360,52 @@
                </div>
             ) : (
               <>
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-8">
-                  {/* 使用 slice 來達成前端分批渲染 */}
-                  {products.slice(0, visibleCount).map(product => (
-                    <ProductCard key={product.id} product={product} addToCart={addToCart} />
-                  ))}
-                </div>
-                
-                {/* 載入更多按鈕 */}
-                {visibleCount < products.length && (
-                  <div className="mt-12 flex justify-center">
-                    <button 
-                      onClick={() => setVisibleCount(prev => prev + 8)}
-                      className="px-8 py-3 bg-white border-2 border-pink-200 text-pink-600 rounded-full font-bold hover:bg-pink-50 hover:shadow-md transition-all active:scale-95 flex items-center gap-2"
-                    >
-                      載入更多商品 <span>👇</span>
-                    </button>
+                {/* 甲型分類篩選器 */}
+                <div className="mb-8 overflow-x-auto pb-4 hide-scrollbar">
+                  <div className="flex gap-2 sm:flex-wrap sm:justify-start lg:justify-center w-max sm:w-auto">
+                    {NAIL_SHAPES.map(shape => (
+                      <button
+                        key={shape}
+                        onClick={() => handleShapeChange(shape)}
+                        className={`px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-all duration-300 ${
+                          selectedShape === shape
+                            ? 'bg-pink-500 text-white shadow-md transform scale-105'
+                            : 'bg-white text-gray-600 border border-gray-200 hover:bg-pink-50 hover:text-pink-500 hover:border-pink-200'
+                        }`}
+                      >
+                        {shape}
+                      </button>
+                    ))}
                   </div>
+                </div>
+
+                {/* 商品列表 */}
+                {filteredProducts.length === 0 ? (
+                   <div className="text-center py-16 text-gray-500 bg-white/50 rounded-3xl border border-gray-100 backdrop-blur-sm">
+                      <div className="text-5xl mb-4">💅</div>
+                      <h2 className="text-xl font-bold mb-2">此甲型目前沒有商品</h2>
+                      <p className="text-sm">您可以看看其他甲型分類，或稍後再回來看看！</p>
+                   </div>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-8">
+                      {filteredProducts.slice(0, visibleCount).map(product => (
+                        <ProductCard key={product.id} product={product} addToCart={addToCart} />
+                      ))}
+                    </div>
+                    
+                    {/* 載入更多按鈕 */}
+                    {visibleCount < filteredProducts.length && (
+                      <div className="mt-12 flex justify-center">
+                        <button 
+                          onClick={() => setVisibleCount(prev => prev + 8)}
+                          className="px-8 py-3 bg-white border-2 border-pink-200 text-pink-600 rounded-full font-bold hover:bg-pink-50 hover:shadow-md transition-all active:scale-95 flex items-center gap-2"
+                        >
+                          載入更多商品 <span>👇</span>
+                        </button>
+                      </div>
+                    )}
+                  </>
                 )}
               </>
             )}
