@@ -272,29 +272,93 @@
 
       // === 智能盤點相關功能 ===
 
-      // 模擬 AI 圖片辨識
-      const handleAIScanSimulation = (e) => {
+      // 真實 AI 圖片辨識 (使用 Gemini Vision API)
+      const handleAIScan = async (e) => {
         const file = e.target.files[0];
         if(!file) return;
         setIsScanning(true);
         setAiScanResults([]);
+        setScanQuery('');
         
-        // 模擬網路延遲與 AI 運算時間
-        setTimeout(() => {
+        try {
           if (inventory.length === 0) {
             showToast('資料庫目前為空，無法比對', 'error');
             setIsScanning(false);
             return;
           }
-          // 模擬選出 3 個最像的款式 (隨機)
-          const shuffled = [...inventory].sort(() => 0.5 - Math.random());
-          const results = shuffled.slice(0, Math.min(3, inventory.length));
-          setAiScanResults(results);
-          setIsScanning(false);
-          setScanQuery(''); // 清空手動搜尋
-        }, 1500);
 
-        e.target.value = ''; // 重置 input
+          // 1. 壓縮圖片以利快速上傳給 AI 解析
+          const base64Image = await compressImage(file, 800);
+          const base64Data = base64Image.split(',')[1];
+
+          // 2. 整理當前所有的庫存清單，將名稱與描述提供給 AI 參考
+          const inventoryContext = inventory.map(item => 
+            `ID: ${item.id}, 名稱: ${item.name || '未命名'}, 甲型: ${item.shape || '無'}, 描述: ${item.description || '無'}, 標籤: ${item.hashtags || '無'}`
+          ).join('\n');
+
+          // 3. 設定 Gemini AI 模型參數
+          const apiKey = ""; 
+          const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+          
+          const prompt = `你是一個專業的美甲款式辨識助理。以下是我所有的美甲款式庫存清單：\n\n${inventoryContext}\n\n現在我上傳了一張盤點中的美甲實拍照片。請你透過這張照片的視覺特徵（顏色、圖案、風格），去比對上述清單中的「名稱、描述、標籤與甲型」，找出最吻合的 3 個款式。\n請以 JSON 格式回傳這 3 個款式的 ID（字串陣列），例如：["NAIL_0001", "NAIL_0002"]。務必只回傳 JSON 陣列，不要有任何其他文字或 Markdown。`;
+
+          const payload = {
+            contents: [{
+              role: "user",
+              parts: [
+                { text: prompt },
+                { inlineData: { mimeType: "image/jpeg", data: base64Data } }
+              ]
+            }],
+            generationConfig: { responseMimeType: "application/json" }
+          };
+
+          // 4. 發送給 AI 並包含失敗重試機制
+          let resultIds = null;
+          let delay = 1000;
+          for (let i = 0; i < 5; i++) {
+            try {
+              const response = await fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+              });
+              
+              if (!response.ok) throw new Error('API Error');
+              
+              const data = await response.json();
+              const textResult = data.candidates?.[0]?.content?.parts?.[0]?.text;
+              
+              if (textResult) {
+                resultIds = JSON.parse(textResult);
+                break;
+              }
+            } catch (err) {
+              if (i === 4) throw err;
+              await new Promise(r => setTimeout(r, delay));
+              delay *= 2;
+            }
+          }
+
+          // 5. 處理 AI 回傳的結果並顯示在畫面上
+          if (resultIds && Array.isArray(resultIds)) {
+            const matchedItems = resultIds.map(id => inventory.find(item => item.id === id)).filter(Boolean);
+            if (matchedItems.length > 0) {
+              setAiScanResults(matchedItems);
+              showToast('✅ AI 辨識成功！', 'success');
+            } else {
+              showToast('未找到相符款式，請嘗試手動搜尋', 'error');
+            }
+          } else {
+            showToast('辨識無法判定，請嘗試手動搜尋', 'error');
+          }
+        } catch (error) {
+          console.error(error);
+          showToast('辨識連線失敗，請重試或手動搜尋', 'error');
+        } finally {
+          setIsScanning(false);
+          e.target.value = '';
+        }
       };
 
       // 點擊任一款式準備盤點 (AI結果 或 手動搜尋結果)
@@ -471,7 +535,7 @@
                         </>
                       )}
                     </button>
-                    <input type="file" accept="image/*" capture="environment" ref={aiInputRef} onChange={handleAIScanSimulation} className="hidden" />
+                    <input type="file" accept="image/*" capture="environment" ref={aiInputRef} onChange={handleAIScan} className="hidden" />
 
                     <div className="mt-8 flex items-center gap-3">
                       <div className="flex-1 h-px bg-gray-100"></div>
