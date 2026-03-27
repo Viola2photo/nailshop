@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>雲端智能建檔系統 - 智能盤點版</title>
+  <title>雲端智能建檔系統 - AI雙效合一版</title>
   
   <script src="https://cdn.tailwindcss.com"></script>
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -99,13 +99,14 @@
       const editMediaRef = useRef(null);
       const [scanQuery, setScanQuery] = useState('');
 
-      // --- 智能盤點系統專用 State ---
-      const aiInputRef = useRef(null);
+      // --- 雙效盤點系統專用 State ---
+      const scanInputRef = useRef(null);
       const [isScanning, setIsScanning] = useState(false);
-      const [aiScanResults, setAiScanResults] = useState([]); // AI 辨識出的候選名單
-      const [activeScanItem, setActiveScanItem] = useState(null); // 當前正在輸入數量的款式
-      const [tempStockInput, setTempStockInput] = useState({ XS: 0, S: 0, M: 0, L: 0 }); // 暫存輸入
-      const [batchList, setBatchList] = useState([]); // 準備批次上傳的清單
+      const [scannedPhoto, setScannedPhoto] = useState(null); 
+      const [aiScanResults, setAiScanResults] = useState([]); 
+      const [activeScanItem, setActiveScanItem] = useState(null); 
+      const [tempStockInput, setTempStockInput] = useState({ XS: 0, S: 0, M: 0, L: 0 }); 
+      const [batchList, setBatchList] = useState([]); 
 
       const showToast = (message, type = 'success') => setToastMsg({ message, type });
 
@@ -270,132 +271,140 @@
         e.target.value = '';
       };
 
-      // === 智能盤點相關功能 ===
+      // === 雙效 AI + 人工視覺盤點功能 ===
 
-      // 真實 AI 圖片辨識 (使用 Gemini Vision API)
-      const handleAIScan = async (e) => {
+      const handlePhotoCapture = async (e) => {
         const file = e.target.files[0];
         if(!file) return;
+        
         setIsScanning(true);
         setAiScanResults([]);
         setScanQuery('');
         
         try {
+          // 1. 壓縮圖片並直接顯示在畫面上，讓使用者能馬上肉眼看
+          const base64Image = await compressImage(file, 800);
+          setScannedPhoto(base64Image);
+
           if (inventory.length === 0) {
-            showToast('資料庫目前為空，無法比對', 'error');
+            showToast('資料庫目前為空，請先建檔', 'info');
             setIsScanning(false);
             return;
           }
 
-          // 1. 壓縮圖片以利快速上傳給 AI 解析
-          const base64Image = await compressImage(file, 800);
+          // 2. 準備呼叫 AI 辨識
           const base64Data = base64Image.split(',')[1];
-
-          // 2. 整理當前所有的庫存清單，將名稱與描述提供給 AI 參考
           const inventoryContext = inventory.map(item => 
             `ID: ${item.id}, 名稱: ${item.name || '未命名'}, 甲型: ${item.shape || '無'}, 描述: ${item.description || '無'}, 標籤: ${item.hashtags || '無'}`
           ).join('\n');
 
-          // 3. 設定 Gemini AI 模型參數
-          const apiKey = ""; 
+          // ⚠️ 注意：若您在自己電腦或手機測試，想啟用AI，請在此填寫 Google AI Studio 申請的 API Key
+          const apiKey = "AIzaSyDSF-fFGJwFy79AlErCyShigaMMfwyddCM"; 
+
+          // 如果沒有 API Key，直接無縫降級為「人工對照模式」
+          if (!apiKey) {
+             showToast('未設定 API Key，已進入「人工視覺比對」模式', 'info');
+             setIsScanning(false);
+             return;
+          }
+
           const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
-          
-          const prompt = `你是一個專業的美甲款式辨識助理。以下是我所有的美甲款式庫存清單：\n\n${inventoryContext}\n\n現在我上傳了一張盤點中的美甲實拍照片。請你透過這張照片的視覺特徵（顏色、圖案、風格），去比對上述清單中的「名稱、描述、標籤與甲型」，找出最吻合的 3 個款式。\n請以 JSON 格式回傳這 3 個款式的 ID（字串陣列），例如：["NAIL_0001", "NAIL_0002"]。務必只回傳 JSON 陣列，不要有任何其他文字或 Markdown。`;
+          const prompt = `你是一個專業的美甲款式辨識助理。以下是我所有的美甲款式庫存清單：\n\n${inventoryContext}\n\n現在我上傳了一張盤點中的美甲實拍照片。請你透過這張照片的視覺特徵，去比對上述清單中的「名稱、描述、標籤與甲型」，找出最吻合的 3 個款式。\n請以 JSON 格式回傳這 3 個款式的 ID（字串陣列），例如：["NAIL_0001", "NAIL_0002"]。務必只回傳 JSON 陣列，不要有任何其他文字。`;
 
           const payload = {
-            contents: [{
-              role: "user",
-              parts: [
-                { text: prompt },
-                { inlineData: { mimeType: "image/jpeg", data: base64Data } }
-              ]
-            }],
+            contents: [{ role: "user", parts: [{ text: prompt }, { inlineData: { mimeType: "image/jpeg", data: base64Data } }] }],
             generationConfig: { responseMimeType: "application/json" }
           };
 
-          // 4. 發送給 AI 並包含失敗重試機制
-          let resultIds = null;
-          let delay = 1000;
-          for (let i = 0; i < 5; i++) {
-            try {
-              const response = await fetch(endpoint, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-              });
-              
-              if (!response.ok) throw new Error('API Error');
-              
-              const data = await response.json();
-              const textResult = data.candidates?.[0]?.content?.parts?.[0]?.text;
-              
-              if (textResult) {
-                resultIds = JSON.parse(textResult);
-                break;
-              }
-            } catch (err) {
-              if (i === 4) throw err;
-              await new Promise(r => setTimeout(r, delay));
-              delay *= 2;
-            }
-          }
-
-          // 5. 處理 AI 回傳的結果並顯示在畫面上
-          if (resultIds && Array.isArray(resultIds)) {
+          const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          
+          if (!response.ok) throw new Error('API Error');
+          
+          const data = await response.json();
+          const textResult = data.candidates?.[0]?.content?.parts?.[0]?.text;
+          
+          if (textResult) {
+            const resultIds = JSON.parse(textResult);
             const matchedItems = resultIds.map(id => inventory.find(item => item.id === id)).filter(Boolean);
             if (matchedItems.length > 0) {
               setAiScanResults(matchedItems);
-              showToast('✅ AI 辨識成功！', 'success');
+              showToast('✨ AI 辨識成功！', 'success');
             } else {
-              showToast('未找到相符款式，請嘗試手動搜尋', 'error');
+              showToast('AI 無法判定，請人工對照下方圖庫', 'info');
             }
-          } else {
-            showToast('辨識無法判定，請嘗試手動搜尋', 'error');
           }
+
         } catch (error) {
-          console.error(error);
-          showToast('辨識連線失敗，請重試或手動搜尋', 'error');
+          console.warn("AI 辨識跳過或失敗", error);
+          showToast('連線異常，已切換至「人工視覺比對」模式', 'info');
         } finally {
           setIsScanning(false);
-          e.target.value = '';
+          e.target.value = ''; // 重置 input 確保能重選
         }
       };
 
-      // 點擊任一款式準備盤點 (AI結果 或 手動搜尋結果)
-      const openScanItemModal = (item) => {
-        setActiveScanItem(item);
-        // 預設帶入原有庫存，方便微調
-        setTempStockInput({ ...item.stock });
+      const handleCreateNewFromScan = async () => {
+        if (!scannedPhoto) return;
+        showToast("正在建立新檔...", "info");
+        
+        try {
+          const downloadUrl = await uploadBase64ToStorage(scannedPhoto, 'draft_from_scan');
+          const newMedia = { id: Math.random().toString(36).substr(2, 9), url: downloadUrl, type: 'image' };
+
+          const nextId = getNextStandardId(inventory, drafts.length);
+          const newDraft = {
+            uid: `manual-${Date.now()}`,
+            formData: {
+              id: nextId, name: '', price: 390, description: '', shape: '', hashtags: '',
+              stock: { XS: 0, S: 0, M: 0, L: 0 },
+              media: [newMedia] 
+            }
+          };
+          
+          setDrafts([...drafts, newDraft]);
+          setScannedPhoto(null);
+          setAiScanResults([]);
+          setActiveTab('upload');
+          showToast("已為您帶入照片，請填寫詳細資訊", "success");
+        } catch (err) {
+          showToast("建立新檔失敗，請重試", "error");
+        }
       };
 
-      // 將當前輸入的庫存加入批次清單
+      const openScanItemModal = (item) => {
+        setActiveScanItem(item);
+        setTempStockInput({ ...item.stock }); 
+      };
+
       const addScanToBatch = () => {
         const existingIndex = batchList.findIndex(b => b.id === activeScanItem.id);
         const newList = [...batchList];
         
         if (existingIndex >= 0) {
-          // 覆蓋舊紀錄
-          newList[existingIndex].stock = { ...tempStockInput };
+          newList[existingIndex].stock = { ...tempStockInput }; 
         } else {
-          // 新增紀錄
           newList.push({
             id: activeScanItem.id,
             name: activeScanItem.name,
             media: activeScanItem.media,
             shape: activeScanItem.shape,
-            originalStock: { ...activeScanItem.stock }, // 記錄原本數量供參考
-            stock: { ...tempStockInput } // 盤點後數量
+            originalStock: { ...activeScanItem.stock }, 
+            stock: { ...tempStockInput } 
           });
         }
         
         setBatchList(newList);
         setActiveScanItem(null);
-        setAiScanResults([]); // 清空 AI 搜尋結果，準備掃下一個
+        setScannedPhoto(null); 
+        setAiScanResults([]);
         setScanQuery('');
-        showToast('✅ 已暫存至待更新清單', 'info');
+        showToast('✅ 已暫存，未消耗雲端流量', 'info');
       };
 
-      // 執行批次更新到 Firebase
       const commitBatchToCloud = async () => {
         if (batchList.length === 0) return;
         showToast('🔄 雲端同步中...', 'info');
@@ -404,23 +413,23 @@
           const batch = db.batch();
           batchList.forEach(item => {
             const docRef = db.collection('artifacts').doc(appId).collection('users').doc(adminUserId).collection('inventory').doc(item.id);
-            // 只更新 stock 欄位
             batch.update(docRef, { stock: item.stock });
           });
           
           await batch.commit();
           showToast('🎉 批次盤點更新成功！', 'success');
-          setBatchList([]); // 清空批次清單
+          setBatchList([]); 
         } catch (error) {
           console.error(error);
           showToast('更新失敗，請檢查網路連線', 'error');
         }
       };
 
-      const filteredInventory = scanQuery ? inventory.filter(i => 
+      const filteredInventory = inventory.filter(i => 
         (i.id || '').toLowerCase().includes(scanQuery.toLowerCase()) || 
-        (i.name || '').toLowerCase().includes(scanQuery.toLowerCase())
-      ) : [];
+        (i.name || '').toLowerCase().includes(scanQuery.toLowerCase()) ||
+        (i.hashtags || '').toLowerCase().includes(scanQuery.toLowerCase())
+      );
 
       return (
         <div className="min-h-screen bg-[#F8F9FA] pb-24 text-gray-800">
@@ -510,83 +519,122 @@
                 </div>
               )}
 
-              {/* === 智能盤點 Tab (全新優化) === */}
+              {/* === AI + 視覺雙效盤點 Tab === */}
               {activeTab === 'scan' && (
-                <div className="max-w-3xl mx-auto space-y-6">
+                <div className="max-w-4xl mx-auto space-y-6">
                   
-                  {/* 掃描區塊 */}
-                  <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-gray-100 text-center">
-                    <h2 className="font-black text-xl text-gray-900 mb-2">📸 AI 智能辨識盤點</h2>
-                    <p className="text-xs font-bold text-gray-400 mb-6">拍下穿戴甲照片，由系統找出最相近的款式</p>
-                    
-                    <button 
-                      onClick={() => aiInputRef.current.click()} 
-                      className={`w-32 h-32 mx-auto rounded-full flex flex-col items-center justify-center transition-all ${isScanning ? 'bg-gray-100 animate-pulse' : 'bg-blue-600 hover:bg-blue-700 hover:scale-105 shadow-xl text-white'}`}
-                    >
-                      {isScanning ? (
-                        <>
-                          <span className="text-4xl mb-2 animate-spin">⚙️</span>
-                          <span className="text-[10px] font-black">AI 辨識中...</span>
-                        </>
-                      ) : (
-                        <>
+                  <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-gray-100 relative">
+                    {!scannedPhoto ? (
+                      <div className="text-center py-6">
+                        <h2 className="font-black text-xl text-gray-900 mb-2">📸 拍下照片，立即比對</h2>
+                        <p className="text-xs font-bold text-gray-400 mb-6">拍下實體款式，系統將嘗試 AI 辨識或提供人工對照圖庫</p>
+                        
+                        <button 
+                          onClick={() => scanInputRef.current.click()} 
+                          className="w-32 h-32 mx-auto rounded-full bg-blue-600 hover:bg-blue-700 hover:scale-105 shadow-xl text-white flex flex-col items-center justify-center transition-all"
+                        >
                           <span className="text-4xl mb-2">📷</span>
                           <span className="text-xs font-black">啟動相機</span>
-                        </>
-                      )}
-                    </button>
-                    <input type="file" accept="image/*" capture="environment" ref={aiInputRef} onChange={handleAIScan} className="hidden" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col md:flex-row gap-6 items-center">
+                        <div className="relative w-32 h-32 md:w-40 md:h-40 rounded-3xl overflow-hidden shadow-md border border-gray-200 flex-shrink-0">
+                          <img src={scannedPhoto} className="w-full h-full object-cover" />
+                          <div className="absolute top-0 left-0 w-full bg-black/50 text-white text-[10px] text-center py-1 font-black backdrop-blur-sm">您拍的照片</div>
+                          {isScanning && (
+                             <div className="absolute inset-0 bg-black/50 backdrop-blur-sm flex flex-col items-center justify-center text-white">
+                                <span className="text-3xl animate-spin mb-1">⚙️</span>
+                                <span className="text-[10px] font-black">處理中...</span>
+                             </div>
+                          )}
+                        </div>
+                        
+                        <div className="flex-1 w-full space-y-4">
+                          {aiScanResults.length > 0 ? (
+                             <div className="bg-green-50 p-4 rounded-2xl border border-green-100">
+                                <h3 className="font-black text-sm text-green-700 mb-3">✨ AI 推薦相符款式 (請點擊)</h3>
+                                <div className="flex gap-3 overflow-x-auto pb-2 custom-scrollbar">
+                                   {aiScanResults.map(item => (
+                                      <div key={item.id} onClick={() => openScanItemModal(item)} className="w-20 sm:w-24 flex-shrink-0 cursor-pointer bg-white border border-green-200 rounded-xl p-1.5 hover:shadow-md transition-all">
+                                         <div className="aspect-square bg-gray-50 rounded-lg overflow-hidden mb-1.5">
+                                            {item.media?.[0] ? <img src={item.media[0].url} className="w-full h-full object-cover" /> : <div className="text-[8px] text-gray-300 w-full h-full flex items-center justify-center">無圖</div>}
+                                         </div>
+                                         <p className="text-[9px] font-black text-gray-900 truncate text-center">{item.name || '未命名'}</p>
+                                      </div>
+                                   ))}
+                                </div>
+                             </div>
+                          ) : (
+                             <div className="text-center md:text-left">
+                                <h3 className="font-black text-lg text-gray-900 mb-3">請從下方圖庫選出對應的款式 👇</h3>
+                                <div className="flex flex-col sm:flex-row gap-3 justify-center md:justify-start">
+                                  <button onClick={() => {setScannedPhoto(null); setAiScanResults([]);}} className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-5 py-3 rounded-2xl text-xs font-black transition-colors">
+                                    🔄 重新拍照
+                                  </button>
+                                  <button onClick={handleCreateNewFromScan} className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-3 rounded-2xl text-xs font-black shadow-md transition-colors flex items-center justify-center gap-2">
+                                    <span>➕ 找不到款式？直接帶入建新檔</span>
+                                  </button>
+                                </div>
+                             </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    
+                    <input type="file" accept="image/*" capture="environment" ref={scanInputRef} onChange={handlePhotoCapture} className="hidden" />
 
-                    <div className="mt-8 flex items-center gap-3">
-                      <div className="flex-1 h-px bg-gray-100"></div>
-                      <span className="text-[10px] font-black text-gray-300 uppercase tracking-widest">或手動輸入查詢</span>
-                      <div className="flex-1 h-px bg-gray-100"></div>
-                    </div>
-
-                    <div className="mt-4 bg-gray-50 p-2 rounded-2xl flex items-center px-4 border border-transparent focus-within:border-blue-200 transition-colors">
+                    <div className="mt-8 bg-gray-50 p-2 rounded-2xl flex items-center px-4 border border-transparent focus-within:border-blue-200 transition-colors">
                       <span className="text-gray-400 mr-2 text-lg">🔍</span>
                       <input 
                         type="text" 
-                        placeholder="輸入款式編號或名稱..." 
+                        placeholder="在圖庫中搜尋款式編號、名稱或標籤..." 
                         value={scanQuery} 
-                        onChange={e => {setScanQuery(e.target.value); setAiScanResults([]);}} 
+                        onChange={e => setScanQuery(e.target.value)} 
                         className="w-full py-3 bg-transparent outline-none font-bold text-sm" 
                       />
                     </div>
                   </div>
 
-                  {/* 搜尋/辨識 結果列表 */}
-                  {(aiScanResults.length > 0 || filteredInventory.length > 0) && (
-                    <div className="space-y-3">
-                      <h3 className="font-black text-sm text-gray-500 px-2">
-                        {aiScanResults.length > 0 ? "✨ AI 推薦最相近款式 (請點選確認)" : "🔍 搜尋結果"}
-                      </h3>
-                      {(aiScanResults.length > 0 ? aiScanResults : filteredInventory).map(item => (
-                        <div 
-                          key={item.id} 
-                          onClick={() => openScanItemModal(item)}
-                          className="bg-white p-3 rounded-3xl shadow-sm border border-gray-100 flex items-center gap-4 cursor-pointer hover:border-blue-400 hover:shadow-md transition-all active:scale-95"
-                        >
-                          <div className="w-16 h-16 bg-gray-50 rounded-2xl overflow-hidden flex-shrink-0 border">
-                            {item.media?.[0] ? <img src={item.media[0].url} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-[10px] text-gray-300">無圖</div>}
+                  {/* 下方：所有庫存款式方格 (方便肉眼比對) */}
+                  <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-gray-100">
+                     <h3 className="font-black text-sm text-gray-500 mb-4 px-2">📦 全部圖庫 (點選以盤點)</h3>
+                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 max-h-[500px] overflow-y-auto custom-scrollbar pr-2">
+                        {filteredInventory.map(item => (
+                          <div 
+                            key={item.id} 
+                            onClick={() => openScanItemModal(item)}
+                            className="group relative bg-gray-50 rounded-2xl overflow-hidden shadow-sm border border-gray-100 cursor-pointer hover:border-blue-400 hover:shadow-md transition-all active:scale-95"
+                          >
+                            <div className="aspect-square bg-white">
+                              {item.media?.[0] ? (
+                                <img src={item.media[0].url} className="w-full h-full object-cover" />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center text-[10px] text-gray-300 font-bold">無圖</div>
+                              )}
+                            </div>
+                            <div className="p-3">
+                              <p className="text-[10px] text-blue-600 font-black mb-0.5">{item.id}</p>
+                              <h4 className="font-black text-xs text-gray-900 truncate">{item.name || '未命名'}</h4>
+                            </div>
                           </div>
-                          <div className="flex-1 min-w-0">
-                            <h4 className="font-black text-sm text-gray-900 truncate">{item.name || '未命名'}</h4>
-                            <p className="text-[10px] text-gray-400 font-bold">{item.id} · {item.shape || '未設甲型'}</p>
+                        ))}
+                        {filteredInventory.length === 0 && (
+                          <div className="col-span-full py-10 text-center text-gray-400 text-xs font-bold">
+                            找不到相關款式... {scannedPhoto && "您可以點擊上方按鈕建立新檔"}
                           </div>
-                          <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center text-lg shadow-sm">
-                            👉
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                        )}
+                     </div>
+                  </div>
 
                   {/* 批次盤點清單 (購物車概念) */}
                   {batchList.length > 0 && (
                     <div className="bg-gray-900 text-white rounded-[2.5rem] p-6 shadow-2xl mt-10">
                       <div className="flex justify-between items-center mb-6">
-                        <h3 className="font-black text-lg">📝 待更新清單 ({batchList.length})</h3>
+                        <div>
+                          <h3 className="font-black text-lg">📝 待更新清單 ({batchList.length})</h3>
+                          <p className="text-[10px] text-gray-400 mt-1 font-bold">目前僅暫存於設備，請點擊下方按鈕完成雲端同步</p>
+                        </div>
                         <button onClick={() => setBatchList([])} className="text-xs bg-white/10 hover:bg-red-500 px-4 py-2 rounded-xl font-black transition-colors">清空</button>
                       </div>
                       
@@ -621,21 +669,37 @@
                     </div>
                   )}
 
-                  {/* 輸入庫存數量的 Modal */}
+                  {/* 輸入庫存數量的防呆確認 Modal */}
                   {activeScanItem && (
                     <div className="fixed inset-0 z-[120] bg-black/80 backdrop-blur-sm flex items-end md:items-center justify-center pb-safe md:pb-0">
-                      <div className="bg-white w-full max-w-md rounded-t-[3rem] md:rounded-[3rem] p-6 shadow-2xl animate-scale-in">
+                      <div className="bg-white w-full max-w-md rounded-t-[3rem] md:rounded-[3rem] p-6 shadow-2xl animate-scale-in max-h-[90vh] overflow-y-auto">
+                        
                         <div className="flex justify-between items-start mb-6">
-                          <div className="flex gap-4">
-                            <div className="w-20 h-20 rounded-2xl overflow-hidden bg-gray-100 shadow-sm border border-gray-200">
-                               {activeScanItem.media?.[0] ? <img src={activeScanItem.media[0].url} className="w-full h-full object-cover" /> : null}
-                            </div>
-                            <div>
-                              <h3 className="font-black text-lg text-gray-900 line-clamp-2">{activeScanItem.name}</h3>
-                              <p className="text-xs font-bold text-blue-600">{activeScanItem.id} · {activeScanItem.shape}</p>
-                            </div>
-                          </div>
+                          <h3 className="font-black text-xl text-gray-900">確認款式與數量</h3>
                           <button onClick={() => setActiveScanItem(null)} className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center font-black text-gray-500">✕</button>
+                        </div>
+
+                        {/* 雙重確認影像比對 */}
+                        <div className="flex gap-4 mb-6">
+                          {scannedPhoto && (
+                             <div className="flex-1 space-y-2">
+                               <p className="text-[10px] font-black text-center text-gray-400 uppercase tracking-widest">您的實拍</p>
+                               <div className="aspect-square rounded-2xl overflow-hidden border-2 border-dashed border-gray-300">
+                                 <img src={scannedPhoto} className="w-full h-full object-cover" />
+                               </div>
+                             </div>
+                          )}
+                          <div className="flex-1 space-y-2">
+                             <p className="text-[10px] font-black text-center text-blue-600 uppercase tracking-widest">系統圖庫款式</p>
+                             <div className="aspect-square rounded-2xl overflow-hidden border-2 border-blue-200 bg-gray-50">
+                               {activeScanItem.media?.[0] ? <img src={activeScanItem.media[0].url} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-xs text-gray-300">無圖</div>}
+                             </div>
+                          </div>
+                        </div>
+                        
+                        <div className="text-center mb-6">
+                           <h4 className="font-black text-lg text-gray-900">{activeScanItem.name}</h4>
+                           <p className="text-xs font-bold text-gray-500">{activeScanItem.id} · {activeScanItem.shape}</p>
                         </div>
 
                         <div className="bg-blue-50 p-4 rounded-2xl mb-6">
@@ -650,7 +714,7 @@
                                   value={tempStockInput[s]} 
                                   onChange={e => setTempStockInput({...tempStockInput, [s]: parseInt(e.target.value) || 0})}
                                   className="w-full bg-white text-center py-3 rounded-xl font-black text-lg shadow-sm border-2 border-transparent focus:border-blue-400 outline-none transition-colors"
-                                  onClick={(e) => e.target.select()} // 點擊自動全選方便修改
+                                  onClick={(e) => e.target.select()} 
                                 />
                                 <span className="text-[9px] font-bold text-gray-400 mt-1">原: {activeScanItem.stock[s]}</span>
                               </div>
@@ -658,8 +722,9 @@
                           </div>
                         </div>
 
-                        <button onClick={addScanToBatch} className="w-full bg-gray-900 text-white py-5 rounded-2xl font-black text-lg shadow-xl hover:bg-black active:scale-95 transition-all">
-                          📥 加入盤點清單
+                        <button onClick={addScanToBatch} className="w-full bg-gray-900 text-white py-5 rounded-2xl font-black text-lg shadow-xl hover:bg-black active:scale-95 transition-all flex flex-col items-center justify-center gap-1">
+                          <span>📥 暫存盤點數量</span>
+                          <span className="text-[10px] text-gray-400 font-bold">(本地記錄，不消耗雲端流量)</span>
                         </button>
                       </div>
                     </div>
