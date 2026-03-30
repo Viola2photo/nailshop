@@ -138,6 +138,9 @@
       const [shippingAddress, setShippingAddress] = useState('');
       const [isGuideOpen, setIsGuideOpen] = useState(false);
 
+      // 新增：紀錄正在重新付款的訂單 ID，防呆避免重複點擊
+      const [repayingOrderId, setRepayingOrderId] = useState(null);
+
       // 檢查是否從綠界結帳成功跳轉回來
       useEffect(() => {
         const params = new URLSearchParams(window.location.search);
@@ -260,32 +263,28 @@
         }
       };
 
-      // 🚀 正確修正版的結帳處理
+      // 呼叫超商地圖的函式
+      const handleOpenMap = (logisticsType) => {
+        // 使用 window.open 開啟 Vercel 後端提供的電子地圖頁面
+        const mapWindow = window.open(`/api/map?logisticsType=${logisticsType}`, 'ECPayMap', 'width=800,height=600,center=yes');
+        if (!mapWindow) {
+          alert('請允許瀏覽器開啟彈出視窗以選擇門市！');
+        }
+      };
+
+      // 🚀 購物車結帳處理
       const handleCheckout = async () => {
         if (!customerName || !customerPhone || !shippingAddress) { 
-          alert('請先填寫收件人姓名、電話，並選擇取件門市！'); 
+          alert('請先填寫收件人姓名、電話，並選擇取件門市或地址！'); 
           return; 
         }
         
         setIsCheckingOut(true);
+        let tempOrderId = `ORD${Date.now()}`;
         
         try {
-          // 1. 整理傳給 Vercel 後端的資料 (需與後端 API 期望的格式一致)
-          const checkoutData = {
-            name: customerName,
-            phone: customerPhone,
-            address: shippingAddress,
-            items: cart.map(item => ({
-              id: item.id,
-              size: item.size,
-              quantity: item.quantity
-            })),
-            discountCode: appliedPromo ? appliedPromo.code : ''
-          };
-
           // 2. 如果使用者有登入，我們在前端先建立一筆個人的「處理中」訂單讓他看得到
           if (user) {
-             const tempOrderId = `ORD${Date.now()}`;
              await db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('orders').doc(tempOrderId).set({
                 orderId: tempOrderId,
                 items: cart,
@@ -296,6 +295,20 @@
                 createdAt: new Date().toISOString()
              });
           }
+
+          // 1. 整理傳給 Vercel 後端的資料 (需與後端 API 期望的格式一致)
+          const checkoutData = {
+            name: customerName,
+            phone: customerPhone,
+            address: shippingAddress,
+            items: cart.map(item => ({
+              id: item.id,
+              size: item.size,
+              quantity: item.quantity
+            })),
+            discountCode: appliedPromo ? appliedPromo.code : '',
+            orderId: tempOrderId // 將這筆訂單號傳給後端對應
+          };
 
           // 3. 呼叫我們剛剛部署好的 Vercel 後端 API
           const response = await fetch('/api/ecpay', {
@@ -319,6 +332,48 @@
           console.error("結帳發生錯誤:", error);
           alert("結帳連線失敗，請檢查網路或稍後再試：" + error.message);
           setIsCheckingOut(false);
+        }
+      };
+
+      // 🚀 針對未付款（Pending）訂單重新發起結帳
+      const handleRepay = async (order) => {
+        setRepayingOrderId(order.id);
+        try {
+          // 重建結帳資料
+          const checkoutData = {
+            name: order.customerInfo?.name || '',
+            phone: order.customerInfo?.phone || '',
+            address: order.customerInfo?.address || '',
+            items: order.items?.map(item => ({
+              id: item.id,
+              size: item.size,
+              quantity: item.quantity
+            })) || [],
+            discountCode: order.promoCode || '',
+            orderId: order.orderId 
+          };
+
+          const response = await fetch('/api/ecpay', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(checkoutData)
+          });
+          
+          if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(errText || '結帳連線失敗');
+          }
+          
+          // 接收後端產生的綠界轉跳表單，進行跳轉
+          const formHtml = await response.text();
+          document.open(); 
+          document.write(formHtml); 
+          document.close();
+        } catch (error) {
+          console.error("重新付款發生錯誤:", error);
+          alert("結帳連線失敗，請稍後再試：" + error.message);
+        } finally {
+          setRepayingOrderId(null);
         }
       };
 
@@ -446,15 +501,27 @@
                   <div className="space-y-6">
                     {userOrders.map(order => (
                       <div key={order.id} className="bg-white rounded-3xl p-6 border border-gray-100 shadow-sm hover:shadow-md transition">
-                        <div className="flex justify-between items-center border-b border-gray-100 pb-4 mb-4">
+                        <div className="flex justify-between items-start border-b border-gray-100 pb-4 mb-4">
                           <div>
                             <span className="text-xs text-gray-400 font-bold block mb-1">{new Date(order.createdAt).toLocaleDateString('zh-TW', { year:'numeric', month:'long', day:'numeric', hour:'2-digit', minute:'2-digit' })}</span>
                             <span className="text-sm font-bold text-gray-800 bg-gray-100 px-3 py-1 rounded-lg">單號: {order.orderId}</span>
                           </div>
-                          <div className={`px-4 py-1.5 rounded-full text-sm font-bold ${
-                            order.status === 'pending' ? 'bg-amber-100 text-amber-700' : order.status === 'paid' ? 'bg-blue-100 text-blue-700' : order.status === 'shipped' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'
-                          }`}>
-                            {order.status === 'pending' ? '⏳ 處理中' : order.status === 'paid' ? '✅ 已付款' : order.status === 'shipped' ? '🚚 已出貨' : order.status}
+                          <div className="flex flex-col items-end gap-2">
+                            <div className={`px-4 py-1.5 rounded-full text-sm font-bold ${
+                              order.status === 'pending' ? 'bg-amber-100 text-amber-700' : order.status === 'paid' ? 'bg-blue-100 text-blue-700' : order.status === 'shipped' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'
+                            }`}>
+                              {order.status === 'pending' ? '⏳ 處理中 (未付款)' : order.status === 'paid' ? '✅ 已付款' : order.status === 'shipped' ? '🚚 已出貨' : order.status}
+                            </div>
+                            {/* 新增：繼續付款按鈕 */}
+                            {order.status === 'pending' && (
+                              <button 
+                                onClick={() => handleRepay(order)}
+                                disabled={repayingOrderId === order.id}
+                                className="text-xs bg-pink-500 hover:bg-pink-600 text-white px-4 py-2 rounded-full shadow-sm transition-colors font-bold disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center gap-1"
+                              >
+                                {repayingOrderId === order.id ? '連線中...' : '💳 繼續結帳'}
+                              </button>
+                            )}
                           </div>
                         </div>
                         <div className="space-y-3 mb-4">
@@ -471,7 +538,7 @@
                         </div>
                         <div className="bg-gray-50 rounded-xl p-4 flex justify-between items-center">
                           <div className="text-xs text-gray-500">
-                            門市：{order.customerInfo?.address} <br/>
+                            門市 / 地址：{order.customerInfo?.address} <br/>
                             收件人：{order.customerInfo?.name}
                           </div>
                           <div className="text-right">
@@ -743,7 +810,18 @@
                       <h3 className="font-bold text-gray-900 text-base mb-3 border-b pb-2">📦 取貨資訊</h3>
                       <input type="text" placeholder="真實姓名 (取貨核對用)" value={customerName} onChange={e => setCustomerName(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm outline-none mb-3 bg-gray-50 focus:bg-white focus:border-pink-300 transition-colors" />
                       <input type="tel" placeholder="手機號碼" value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm outline-none mb-3 bg-gray-50 focus:bg-white focus:border-pink-300 transition-colors" />
-                      <textarea placeholder="填寫地址，或點選下方按鈕選超商" value={shippingAddress} onChange={e => setShippingAddress(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-pink-200 text-sm font-bold text-pink-700 outline-none bg-pink-50 resize-none h-16 mb-2"></textarea>
+                      
+                      {/* 🚀 新增的超商按鈕區塊 */}
+                      <div className="flex gap-2 mb-2">
+                        <button type="button" onClick={() => handleOpenMap('UNIMARTC2C')} className="flex-1 bg-green-50 hover:bg-green-100 text-green-700 font-bold py-2.5 rounded-xl border border-green-200 transition-colors text-sm flex items-center justify-center gap-1 shadow-sm">
+                          🏪 7-11 門市
+                        </button>
+                        <button type="button" onClick={() => handleOpenMap('FAMIC2C')} className="flex-1 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold py-2.5 rounded-xl border border-blue-200 transition-colors text-sm flex items-center justify-center gap-1 shadow-sm">
+                          🏪 全家 門市
+                        </button>
+                      </div>
+
+                      <textarea placeholder="點選上方按鈕選擇超商，或直接填寫宅配地址" value={shippingAddress} onChange={e => setShippingAddress(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-pink-200 text-sm font-bold text-pink-700 outline-none bg-pink-50 resize-none h-16 mb-2"></textarea>
                     </div>
                   )}
 
