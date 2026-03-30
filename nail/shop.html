@@ -26,8 +26,6 @@
       .preloader-text { margin-top: 16px; color: #9ca3af; font-family: sans-serif; font-weight: bold; font-size: 14px; letter-spacing: 2px; }
       .hide-scrollbar::-webkit-scrollbar { display: none; }
       .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-      
-      /* 確保 Navbar 和 分類條的吸頂效果順暢 */
       html { scroll-behavior: smooth; }
     </style>
     <div class="preloader">
@@ -37,7 +35,6 @@
   </div>
 
   <script type="text/babel">
-    // Firebase 初始化
     const firebaseConfig = {
       apiKey: "AIzaSyDQZGeeubB8bEUL59v9yt0QBAfIWJcvgnw",
       authDomain: "nailproject-40022.firebaseapp.com",
@@ -51,7 +48,6 @@
     const db = firebase.firestore();
     const auth = firebase.auth();
     
-    // Admin ID (您的庫存來源)
     const adminUserId = "MvkJo5e1kEcBS0fGGMr4RKdQjYg1"; 
     const appId = 'nail-inventory-app';
 
@@ -61,73 +57,57 @@
     const PROMO_CODES = {
       'VIP9': { type: 'percent', value: 0.9, name: 'VIP 專屬 9 折' },
       'SAVE100': { type: 'minus', value: 100, name: '滿額現折 100 元' },
-      'NEWOPEN': { type: 'percent', value: 0.85, name: '歡慶開幕 85 折' }
+      'NEWOPEN': { type: 'percent', value: 0.85, name: '歡慶開幕 85 折' },
+      'KOL_VIOLA': { type: 'percent', value: 0.95, name: 'Viola 粉絲專屬 95 折' } // 網紅折扣碼範例
     };
 
     const NAIL_SHAPES = ['全部', '短橢圓', '中橢圓', '長橢圓', '細狗尖', '杏仁甲', '短圓', '新中方', '短梯', '中梯', '長梯', '超長梯', '長水滴'];
 
     const { useState, useEffect, useMemo } = React;
 
-    // --- 商品卡片元件 ---
-    const ProductCard = ({ product, addToCart }) => {
-      const [isHovered, setIsHovered] = useState(false);
+    // --- 商品卡片元件 (每 0.5 秒自動輪播，點擊整張卡片開啟詳細頁) ---
+    const ProductCard = ({ product, onClick }) => {
       const [mediaIndex, setMediaIndex] = useState(0);
 
       useEffect(() => {
         let interval;
-        if (isHovered && product.media && product.media.length > 1) {
+        // 只要有多張圖片，每 0.5 秒自動輪換
+        if (product.media && product.media.length > 1) {
           interval = setInterval(() => {
             setMediaIndex(prev => (prev + 1) % product.media.length);
-          }, 1200);
-        } else {
-          setMediaIndex(0);
+          }, 500);
         }
         return () => clearInterval(interval);
-      }, [isHovered, product.media]);
+      }, [product.media]);
 
       const currentMedia = product.media?.[mediaIndex];
 
       return (
         <div 
-          className="group bg-white p-3 rounded-3xl shadow-sm hover:shadow-xl transition-all duration-300 border border-gray-50 flex flex-col h-full animate-fade-in-up"
-          onMouseEnter={() => setIsHovered(true)}
-          onMouseLeave={() => setIsHovered(false)}
+          onClick={() => onClick(product)}
+          className="group bg-white p-3 rounded-3xl shadow-sm hover:shadow-xl transition-all duration-300 border border-gray-50 flex flex-col h-full animate-fade-in-up cursor-pointer"
         >
           <div className="aspect-[4/5] rounded-2xl overflow-hidden bg-gray-50 mb-4 relative flex-shrink-0">
             {currentMedia ? (
               currentMedia.type === 'video' ? (
-                 <video src={currentMedia.url} className={`w-full h-full object-cover transition-transform duration-700 ${isHovered ? 'scale-110' : 'scale-100'}`} autoPlay muted loop playsInline />
+                 <video src={currentMedia.url} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" autoPlay muted loop playsInline />
               ) : (
-                 <img src={currentMedia.url} className={`w-full h-full object-cover transition-transform duration-700 ${isHovered ? 'scale-110' : 'scale-100'}`} />
+                 <img src={currentMedia.url} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
               )
             ) : (
                <div className="w-full h-full flex items-center justify-center text-gray-300">無圖片</div>
             )}
             {product.shape && <span className="absolute top-3 left-3 bg-white/95 backdrop-blur-sm text-xs font-bold px-2 py-1 rounded-lg shadow-sm text-pink-600">{product.shape}</span>}
+            
+            {/* 提示點擊查看的小標籤 */}
+            <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity duration-300">
+               <span className="bg-white/90 text-gray-900 text-sm font-bold px-4 py-2 rounded-full shadow-lg">查看詳情 🔍</span>
+            </div>
           </div>
           
-          <div className="px-1 flex-1 flex flex-col">
+          <div className="px-1 flex-1 flex flex-col text-center">
             <h3 className="font-black text-gray-900 text-lg mb-1 truncate">{product.name}</h3>
-            {product.description && <p className="text-gray-500 text-xs mb-3 line-clamp-2 leading-relaxed">{product.description}</p>}
-            
-            <div className="mt-auto">
-              <p className="text-pink-600 font-bold text-sm mb-3">NT$ {product.price}</p>
-              <div className="flex gap-2">
-                {['XS', 'S', 'M', 'L'].map(size => {
-                  const inStock = product.stock[size] > 0;
-                  return (
-                    <button 
-                      key={size} disabled={!inStock} onClick={() => addToCart(product, size)}
-                      className={`flex-1 py-2 text-xs font-bold rounded-xl border transition-all active:scale-95 ${
-                        inStock ? 'border-gray-200 text-gray-700 hover:border-pink-500 hover:bg-pink-50 hover:text-pink-600' : 'border-gray-100 text-gray-300 bg-gray-50 cursor-not-allowed'
-                      }`}
-                    >
-                      {size} {inStock ? '' : <span className="block text-[8px] font-normal">售完</span>}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+            <p className="text-pink-600 font-bold text-base mt-auto">NT$ {product.price}</p>
           </div>
         </div>
       );
@@ -144,13 +124,16 @@
       const [isLoading, setIsLoading] = useState(true);
       const [isCheckingOut, setIsCheckingOut] = useState(false);
       
-      // 會員與視窗狀態
+      // 放大預覽彈窗狀態
+      const [selectedProduct, setSelectedProduct] = useState(null);
+      const [modalSize, setModalSize] = useState('');
+      const [modalQty, setModalQty] = useState(1);
+      
       const [user, setUser] = useState(null);
-      const [viewMode, setViewMode] = useState('shop'); // 'shop' | 'orders'
+      const [viewMode, setViewMode] = useState('shop'); 
       const [userOrders, setUserOrders] = useState([]);
       const [showScrollTop, setShowScrollTop] = useState(false);
 
-      // 結帳表單
       const [promoInput, setPromoInput] = useState('');
       const [appliedPromo, setAppliedPromo] = useState(null);
       const [customerName, setCustomerName] = useState('');
@@ -158,12 +141,10 @@
       const [shippingAddress, setShippingAddress] = useState('');
       const [isGuideOpen, setIsGuideOpen] = useState(false);
 
-      // 1. 監聽 Firebase 登入狀態
       useEffect(() => {
         const unsubscribe = auth.onAuthStateChanged((currentUser) => {
           setUser(currentUser);
           if (currentUser) {
-            // 若已登入，可預填姓名 (依據 Google 帳號)
             if(!customerName) setCustomerName(currentUser.displayName || '');
             fetchUserOrders(currentUser.uid);
           }
@@ -171,7 +152,6 @@
         return () => unsubscribe();
       }, []);
 
-      // 2. 獲取您的商品庫存
       useEffect(() => {
         if(!adminUserId) return;
         const inventoryRef = db.collection('artifacts').doc(appId).collection('users').doc(adminUserId).collection('inventory');
@@ -184,14 +164,12 @@
         return () => unsubscribe();
       }, []);
 
-      // 3. 監聽捲動事件 (回到頂部按鈕)
       useEffect(() => {
         const handleScroll = () => setShowScrollTop(window.scrollY > 400);
         window.addEventListener('scroll', handleScroll);
         return () => window.removeEventListener('scroll', handleScroll);
       }, []);
 
-      // 綠界地圖回傳處理
       useEffect(() => {
         const handleMessage = (event) => {
           if (event.data && event.data.type === 'ECPAY_MAP_RESULT') {
@@ -202,22 +180,13 @@
         return () => window.removeEventListener('message', handleMessage);
       }, []);
 
-      // 會員登入/登出
       const handleLogin = async () => {
         const provider = new firebase.auth.GoogleAuthProvider();
-        try {
-          await auth.signInWithPopup(provider);
-        } catch (error) {
-          console.error("Login failed", error);
-        }
+        try { await auth.signInWithPopup(provider); } catch (error) { console.error("Login failed", error); }
       };
 
-      const handleLogout = () => {
-        auth.signOut();
-        setViewMode('shop');
-      };
+      const handleLogout = () => { auth.signOut(); setViewMode('shop'); };
 
-      // 獲取會員歷史訂單
       const fetchUserOrders = (uid) => {
         db.collection('artifacts').doc(appId).collection('users').doc(uid).collection('orders')
           .orderBy('createdAt', 'desc').limit(20)
@@ -229,7 +198,6 @@
 
       const scrollToTop = () => window.scrollTo({ top: 0, behavior: 'smooth' });
 
-      // 過濾商品邏輯
       const filteredProducts = useMemo(() => {
         if (selectedShape === '全部') return products;
         return products.filter(p => p.shape === selectedShape);
@@ -238,52 +206,50 @@
       const handleShapeChange = (shape) => {
         setSelectedShape(shape);
         setVisibleCount(8);
-        window.scrollTo({ top: 0, behavior: 'smooth' }); // 切換分類時平滑回到最上
+        window.scrollTo({ top: 0, behavior: 'smooth' });
       };
 
-      const addToCart = (product, size) => {
+      // 打開放大預覽頁面
+      const openProductModal = (product) => {
+        setSelectedProduct(product);
+        setModalSize('');
+        setModalQty(1);
+      };
+
+      // 將選擇的商品加入購物車
+      const handleAddToCart = () => {
+        if (!modalSize) {
+          alert('請先選擇尺寸哦！');
+          return;
+        }
         setCart(prev => {
-          const existing = prev.find(item => item.id === product.id && item.size === size);
+          const existing = prev.find(item => item.id === selectedProduct.id && item.size === modalSize);
           if (existing) {
-            return prev.map(item => item === existing ? { ...item, quantity: item.quantity + 1 } : item);
+            return prev.map(item => item === existing ? { ...item, quantity: item.quantity + modalQty } : item);
           }
-          return [...prev, { ...product, size, quantity: 1 }];
+          return [...prev, { ...selectedProduct, size: modalSize, quantity: modalQty }];
         });
-        setIsCartOpen(true);
+        setSelectedProduct(null); // 關閉 Modal
+        setIsCartOpen(true);      // 打開購物車
       };
 
       const removeFromCart = (index) => setCart(prev => prev.filter((_, i) => i !== index));
 
-      // 價格計算邏輯
+      // 價格計算邏輯 (取消了 4件1000 的邏輯，保持最乾淨的總價計算)
       const cartSubtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-      let allPrices = [];
-      cart.forEach(item => { for(let i=0; i<item.quantity; i++) allPrices.push(item.price); });
-      allPrices.sort((a, b) => b - a); 
       
-      const bundleCount = Math.floor(allPrices.length / 4);
-      let eventDiscountAmount = 0;
-      let isEventFreeShipping = false;
-      
-      if (bundleCount > 0) {
-        let originalBundlePrice = 0;
-        for(let i=0; i < bundleCount * 4; i++) { originalBundlePrice += allPrices[i]; }
-        eventDiscountAmount = originalBundlePrice - (bundleCount * 1000);
-        isEventFreeShipping = true;
-      }
-
-      const currentShippingFee = (cartSubtotal === 0 || isEventFreeShipping || cartSubtotal >= FREE_SHIPPING_THRESHOLD) ? 0 : SHIPPING_FEE;
+      const currentShippingFee = (cartSubtotal === 0 || cartSubtotal >= FREE_SHIPPING_THRESHOLD) ? 0 : SHIPPING_FEE;
       const isFreeShipping = currentShippingFee === 0 && cartSubtotal > 0;
       
       let promoDiscountAmount = 0;
-      const subtotalAfterEvent = cartSubtotal - eventDiscountAmount; 
 
-      if (appliedPromo && subtotalAfterEvent > 0) {
-        if (appliedPromo.type === 'percent') { promoDiscountAmount = Math.round(subtotalAfterEvent * (1 - appliedPromo.value)); } 
+      if (appliedPromo && cartSubtotal > 0) {
+        if (appliedPromo.type === 'percent') { promoDiscountAmount = Math.round(cartSubtotal * (1 - appliedPromo.value)); } 
         else if (appliedPromo.type === 'minus') { promoDiscountAmount = appliedPromo.value; }
       }
-      if (subtotalAfterEvent - promoDiscountAmount < 0) promoDiscountAmount = subtotalAfterEvent;
+      if (cartSubtotal - promoDiscountAmount < 0) promoDiscountAmount = cartSubtotal;
 
-      const finalTotal = cartSubtotal - eventDiscountAmount - promoDiscountAmount + currentShippingFee;
+      const finalTotal = cartSubtotal - promoDiscountAmount + currentShippingFee;
 
       const handleApplyPromo = () => {
         const code = promoInput.toUpperCase().trim();
@@ -291,28 +257,19 @@
           setAppliedPromo({ ...PROMO_CODES[code], code });
           setPromoInput('');
         } else {
-          alert('❌ 無效的優惠碼或已過期');
+          alert('❌ 無效的折扣碼或已過期');
         }
       };
 
-      // 結帳處理 (新增儲存訂單至 Firebase)
       const handleCheckout = async () => {
-        if (!customerName || !customerPhone || !shippingAddress) {
-          alert('請先填寫收件人姓名、電話，並選擇取件門市！');
-          return;
-        }
-
+        if (!customerName || !customerPhone || !shippingAddress) { alert('請先填寫收件人姓名、電話，並選擇取件門市！'); return; }
         setIsCheckingOut(true);
-        
         try {
-          // 產生訂單明細字串 (給綠界用)
           let itemNamesArr = cart.map(i => `${i.name}(${i.size}) x ${i.quantity}`);
-          if (eventDiscountAmount > 0) itemNamesArr.push(`[活動]任4件1000折抵 x 1`);
           if (currentShippingFee > 0) itemNamesArr.push(`物流運費 x 1`);
           if (promoDiscountAmount > 0) itemNamesArr.push(`${appliedPromo.name}折抵 x 1`);
           const itemNames = itemNamesArr.join('#').substring(0, 390);
 
-          // 1. 若有登入，先在資料庫建立一筆 Pending 訂單 (CRM功能)
           let orderId = `ORD${Date.now()}`;
           if (user) {
              await db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('orders').doc(orderId).set({
@@ -320,19 +277,19 @@
                 items: cart,
                 totalAmount: finalTotal,
                 customerInfo: { name: customerName, phone: customerPhone, address: shippingAddress },
-                status: 'pending', // pending(待付款), paid(已付款), processing(製作中), shipped(已出貨)
+                promoCode: appliedPromo ? appliedPromo.code : null, // 紀錄使用的優惠碼供網紅分潤核對
+                status: 'pending',
                 createdAt: new Date().toISOString()
              });
           }
 
-          // 2. 呼叫後端 API 傳送至綠界 (此處保留您原有的 API)
           const response = await fetch('/api/ecpay', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
               total: finalTotal, items: itemNames,
               name: customerName, phone: customerPhone, address: shippingAddress,
-              customOrderId: orderId // 建議您可以傳遞訂單編號給後端
+              customOrderId: orderId
             }) 
           });
           
@@ -342,12 +299,8 @@
 
         } catch(e) {
           console.error(e);
-          // 若無真實後端，為了展示，模擬成功
           alert('【系統提示】因為目前尚無後端串接綠界，系統將模擬結帳成功並存入訂單。');
-          setCart([]);
-          setIsCartOpen(false);
-          setViewMode('orders');
-          setIsCheckingOut(false);
+          setCart([]); setIsCartOpen(false); setViewMode('orders'); setIsCheckingOut(false);
         }
       };
 
@@ -362,7 +315,6 @@
             <div className="max-w-6xl mx-auto px-4 md:px-5 py-3 md:py-4 flex justify-between items-center">
               
               <div className="flex items-center gap-3 cursor-pointer" onClick={() => setViewMode('shop')}>
-                {/* 加上 onError 備用圖片機制 */}
                 <img 
                   src="freepik__logo__19488.png" 
                   onError={(e) => { e.target.onerror = null; e.target.src = 'https://ui-avatars.com/api/?name=指尖造藝&background=FDF2F8&color=DB2777&rounded=true&bold=true'; }}
@@ -374,17 +326,15 @@
 
               <div className="flex items-center gap-2 md:gap-4">
                 <button onClick={() => setIsGuideOpen(true)} className="text-xs md:text-sm font-bold text-gray-500 hover:text-pink-500 bg-gray-50 px-3 py-2 rounded-full shadow-sm border border-gray-100 transition">
-                  📏 教學
+                  📏 尺寸測量
                 </button>
 
-                {/* 會員登入/選單區 */}
                 {user ? (
                   <div className="relative group">
                     <button className="flex items-center gap-2 bg-gray-50 hover:bg-gray-100 px-3 py-1.5 rounded-full transition border border-gray-100">
                       <img src={user.photoURL || 'https://ui-avatars.com/api/?name=U'} className="w-7 h-7 rounded-full" />
                       <span className="text-sm font-bold text-gray-700 hidden md:inline">{user.displayName?.split(' ')[0] || '會員'}</span>
                     </button>
-                    {/* Hover 選單 */}
                     <div className="absolute right-0 mt-2 w-32 bg-white rounded-xl shadow-xl border border-gray-100 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 py-2">
                       <button onClick={() => setViewMode('orders')} className="w-full text-left px-4 py-2 text-sm font-bold text-gray-700 hover:text-pink-600 hover:bg-pink-50">📋 我的訂單</button>
                       <button onClick={handleLogout} className="w-full text-left px-4 py-2 text-sm font-bold text-gray-700 hover:text-red-600 hover:bg-red-50">登出</button>
@@ -408,7 +358,7 @@
             </div>
           </header>
 
-          {/* 吸頂式甲型分類列 (僅在 Shop 模式顯示) */}
+          {/* 吸頂分類 */}
           {viewMode === 'shop' && (
             <div className="sticky top-[60px] md:top-[76px] z-30 bg-white/95 backdrop-blur-md shadow-sm border-b border-gray-100 py-3 px-4">
               <div className="max-w-6xl mx-auto overflow-x-auto hide-scrollbar">
@@ -433,7 +383,6 @@
 
           <main className="max-w-6xl mx-auto px-4 py-8">
             {viewMode === 'shop' ? (
-              // --- 購物商城畫面 ---
               isLoading ? (
                  <div className="text-center py-20 text-gray-400 font-bold flex flex-col items-center gap-3">
                    <div className="w-8 h-8 border-4 border-pink-200 border-t-pink-500 rounded-full animate-spin"></div>
@@ -451,9 +400,9 @@
                  </div>
               ) : (
                 <>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 md:gap-8">
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-8">
                     {filteredProducts.slice(0, visibleCount).map(product => (
-                      <ProductCard key={product.id} product={product} addToCart={addToCart} />
+                      <ProductCard key={product.id} product={product} onClick={openProductModal} />
                     ))}
                   </div>
                   {visibleCount < filteredProducts.length && (
@@ -466,13 +415,12 @@
                 </>
               )
             ) : (
-              // --- 我的訂單畫面 (CRM) ---
+              // 我的訂單
               <div className="max-w-3xl mx-auto animate-fade-in-up">
                 <div className="flex items-center gap-4 mb-8">
                   <button onClick={() => setViewMode('shop')} className="text-gray-500 hover:text-gray-900 bg-white w-10 h-10 rounded-full shadow-sm flex items-center justify-center font-bold">←</button>
                   <h2 className="text-2xl font-black text-gray-900">📦 我的訂單</h2>
                 </div>
-                
                 {userOrders.length === 0 ? (
                   <div className="bg-white p-10 rounded-3xl text-center border border-gray-100 shadow-sm">
                     <div className="text-5xl mb-4">📜</div>
@@ -489,9 +437,7 @@
                             <span className="text-sm font-bold text-gray-800 bg-gray-100 px-3 py-1 rounded-lg">單號: {order.orderId}</span>
                           </div>
                           <div className={`px-4 py-1.5 rounded-full text-sm font-bold ${
-                            order.status === 'pending' ? 'bg-amber-100 text-amber-700' :
-                            order.status === 'paid' ? 'bg-blue-100 text-blue-700' :
-                            order.status === 'shipped' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'
+                            order.status === 'pending' ? 'bg-amber-100 text-amber-700' : order.status === 'paid' ? 'bg-blue-100 text-blue-700' : order.status === 'shipped' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'
                           }`}>
                             {order.status === 'pending' ? '⏳ 處理中' : order.status === 'paid' ? '✅ 已付款' : order.status === 'shipped' ? '🚚 已出貨' : order.status}
                           </div>
@@ -526,21 +472,166 @@
             )}
           </main>
 
-          {/* 回到頂部按鈕 */}
-          <button 
-            onClick={scrollToTop}
-            className={`fixed bottom-6 right-6 z-40 bg-pink-500 text-white w-12 h-12 rounded-full shadow-lg flex items-center justify-center text-xl transition-all duration-300 hover:bg-pink-600 hover:scale-110 hover:shadow-pink-300/50 hover:-translate-y-1 ${showScrollTop ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10 pointer-events-none'}`}
-          >
+          <button onClick={scrollToTop} className={`fixed bottom-6 right-6 z-40 bg-pink-500 text-white w-12 h-12 rounded-full shadow-lg flex items-center justify-center text-xl transition-all duration-300 hover:bg-pink-600 hover:scale-110 hover:shadow-pink-300/50 hover:-translate-y-1 ${showScrollTop ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10 pointer-events-none'}`}>
             🚀
           </button>
 
-          {/* 教學 Modal */}
+          {/* 🌟 商品放大預覽 (Quick View Modal) 🌟 */}
+          {selectedProduct && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+              <div className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onClick={() => setSelectedProduct(null)}></div>
+              <div className="bg-white rounded-[2rem] w-full max-w-4xl max-h-[90vh] overflow-y-auto relative z-10 shadow-2xl flex flex-col md:flex-row animate-fade-in-up">
+                
+                <button onClick={() => setSelectedProduct(null)} className="absolute top-4 right-4 w-10 h-10 flex items-center justify-center bg-gray-100 hover:bg-gray-200 rounded-full font-bold text-gray-600 transition-colors z-20">✕</button>
+                
+                {/* 左側：大圖片展示 (橫向捲動) */}
+                <div className="md:w-1/2 bg-gray-50 flex overflow-x-auto snap-x snap-mandatory hide-scrollbar">
+                  {selectedProduct.media?.map((m, idx) => (
+                    <div key={idx} className="w-full flex-shrink-0 snap-center aspect-[4/5] md:aspect-auto flex items-center justify-center">
+                       {m.type === 'video' ? 
+                         <video src={m.url} className="w-full h-full object-cover" autoPlay muted loop playsInline /> :
+                         <img src={m.url} className="w-full h-full object-cover" />
+                       }
+                    </div>
+                  ))}
+                  {(!selectedProduct.media || selectedProduct.media.length === 0) && (
+                     <div className="w-full aspect-[4/5] flex items-center justify-center text-gray-300">無圖片</div>
+                  )}
+                </div>
+
+                {/* 右側：詳細資訊與購買選項 */}
+                <div className="md:w-1/2 p-6 md:p-10 flex flex-col">
+                  {selectedProduct.shape && <span className="inline-block bg-pink-50 text-pink-600 text-xs font-bold px-3 py-1 rounded-full mb-3 w-max">{selectedProduct.shape}</span>}
+                  
+                  <h2 className="text-2xl md:text-3xl font-black text-gray-900 mb-2">{selectedProduct.name}</h2>
+                  <p className="text-2xl font-bold text-pink-600 mb-6">NT$ {selectedProduct.price}</p>
+                  
+                  {selectedProduct.description && (
+                    <div className="mb-6 bg-gray-50 p-4 rounded-2xl text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">
+                      {selectedProduct.description}
+                    </div>
+                  )}
+
+                  <div className="mb-6">
+                    <div className="flex justify-between items-end mb-3">
+                      <h3 className="font-bold text-gray-900">選擇尺寸</h3>
+                      <button onClick={() => {setSelectedProduct(null); setIsGuideOpen(true);}} className="text-xs text-pink-500 hover:underline font-bold">📏 不知道尺寸嗎？</button>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      {['XS', 'S', 'M', 'L'].map(size => {
+                        const inStock = selectedProduct.stock[size] > 0;
+                        return (
+                          <button 
+                            key={size} disabled={!inStock} onClick={() => setModalSize(size)}
+                            className={`py-3 rounded-xl border-2 flex flex-col items-center justify-center transition-all ${
+                              modalSize === size ? 'border-pink-500 bg-pink-50' : 
+                              inStock ? 'border-gray-100 hover:border-pink-300 hover:bg-gray-50' : 'border-gray-50 bg-gray-50 opacity-50 cursor-not-allowed'
+                            }`}
+                          >
+                            <span className={`font-black ${modalSize === size ? 'text-pink-600' : 'text-gray-700'}`}>{size}</span>
+                            {!inStock && <span className="text-[10px] text-red-400 mt-1 block">缺貨</span>}
+                            {/* 特別標註 S 號 */}
+                            {inStock && size === 'S' && <span className="text-[9px] text-pink-500 mt-0.5 whitespace-nowrap hidden sm:block">約70-80%適用</span>}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {/* 手機版 S 號的補充說明 */}
+                    <div className="sm:hidden text-xs text-pink-500 mt-2 font-bold text-center">💡 S號約適合 70% ~ 80% 的女孩唷！</div>
+                  </div>
+
+                  <div className="mb-8 flex items-center gap-4">
+                    <span className="font-bold text-gray-900">數量</span>
+                    <div className="flex items-center bg-gray-50 rounded-full border border-gray-200 p-1">
+                      <button onClick={() => setModalQty(Math.max(1, modalQty - 1))} className="w-8 h-8 flex items-center justify-center font-bold text-gray-600 hover:bg-gray-200 rounded-full transition">-</button>
+                      <span className="w-10 text-center font-bold">{modalQty}</span>
+                      <button onClick={() => setModalQty(modalQty + 1)} className="w-8 h-8 flex items-center justify-center font-bold text-gray-600 hover:bg-gray-200 rounded-full transition">+</button>
+                    </div>
+                  </div>
+
+                  <button 
+                    onClick={handleAddToCart}
+                    className="mt-auto w-full bg-gray-900 text-white py-4 rounded-2xl font-black text-lg hover:bg-pink-600 transition-all shadow-xl active:scale-[0.98]"
+                  >
+                    加入購物車 🛒
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 📏 教學 Modal (補回尺寸測量教學) */}
           {isGuideOpen && (
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
               <div className="absolute inset-0 bg-black/50 backdrop-blur-sm transition-opacity" onClick={() => setIsGuideOpen(false)}></div>
               <div className="bg-white rounded-3xl w-full max-w-2xl max-h-[85vh] overflow-y-auto relative z-10 shadow-2xl p-6 md:p-10 animate-fade-in-up">
                 <button onClick={() => setIsGuideOpen(false)} className="absolute top-4 right-4 w-10 h-10 flex items-center justify-center bg-gray-100 hover:bg-gray-200 rounded-full font-bold text-gray-600 transition-colors z-20">✕</button>
-                <section className="mb-10 bg-[#fbf6e9] p-6 md:p-8 rounded-3xl relative overflow-hidden border border-[#f0e8d5]">
+                
+                {/* 尺寸測量區 */}
+                <h2 className="text-2xl font-black mb-6 text-gray-900 border-b-2 border-pink-100 pb-4 mt-2">📏 如何測量指甲尺寸？</h2>
+                <div className="space-y-6 text-gray-700 leading-relaxed mb-10">
+                   <div className="bg-pink-50 p-6 rounded-2xl border border-pink-100">
+                      <h3 className="font-bold text-lg mb-3 text-pink-800">📌 測量三步驟</h3>
+                      <ol className="list-decimal ml-5 space-y-2 text-sm font-bold">
+                        <li>準備一條軟尺（或使用一般紙膠帶貼在指甲上畫線，再拿直尺量）。</li>
+                        <li>將軟尺<b>平貼著指甲表面</b>，測量指甲「最寬處」的弧度（包含指甲弧度，非直線距離，請勿用力往下壓）。</li>
+                        <li>記錄十指的寬度（公釐 mm），對照下方的尺寸表挑選最適合的規格。若介於兩者之間，建議<b>選大不選小</b>（大一點還能用銼條微調打磨）。</li>
+                      </ol>
+                   </div>
+                   
+                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm text-center font-bold">
+                      <div className="bg-white border border-gray-200 p-4 rounded-xl shadow-sm">
+                        <div className="text-xl text-pink-600 mb-1">XS</div>
+                        <div className="text-gray-500 text-xs">小巧指甲適用</div>
+                      </div>
+                      <div className="bg-white border-2 border-pink-400 p-4 rounded-xl shadow-md relative overflow-hidden transform scale-105">
+                        <div className="absolute top-0 right-0 bg-pink-500 text-white text-[10px] px-2 py-1 rounded-bl-lg">大眾尺寸</div>
+                        <div className="text-xl text-pink-600 mb-1 mt-1">S</div>
+                        <div className="text-pink-600 text-xs">約70%~80%的人適用</div>
+                      </div>
+                      <div className="bg-white border border-gray-200 p-4 rounded-xl shadow-sm">
+                        <div className="text-xl text-pink-600 mb-1">M</div>
+                        <div className="text-gray-500 text-xs">一般指甲適用</div>
+                      </div>
+                      <div className="bg-white border border-gray-200 p-4 rounded-xl shadow-sm">
+                        <div className="text-xl text-pink-600 mb-1">L</div>
+                        <div className="text-gray-500 text-xs">偏寬大指甲適用</div>
+                      </div>
+                   </div>
+                </div>
+
+                {/* ✨ 穿戴與卸除教學區 */}
+                <h2 className="text-2xl font-black mb-6 text-gray-900 border-b-2 border-pink-100 pb-4">✨ 如何完美配戴與卸除？</h2>
+                <div className="space-y-6 text-gray-700 leading-relaxed mb-10">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* 配戴步驟 */}
+                    <div className="bg-white border border-gray-100 p-6 rounded-2xl shadow-sm hover:shadow-md transition">
+                      <h3 className="font-bold text-lg mb-4 text-pink-600 flex items-center gap-2"><span>💅</span> 輕鬆配戴 4 步驟</h3>
+                      <ol className="space-y-4 text-sm font-bold">
+                        <li className="flex gap-3"><span className="bg-pink-100 text-pink-600 w-6 h-6 rounded-full flex items-center justify-center shrink-0">1</span> <span><span className="text-gray-900">輕度打磨：</span>用海綿搓條輕輕打磨指甲表面，去除油脂。</span></li>
+                        <li className="flex gap-3"><span className="bg-pink-100 text-pink-600 w-6 h-6 rounded-full flex items-center justify-center shrink-0">2</span> <span><span className="text-gray-900">徹底清潔：</span>使用酒精棉片擦拭指甲，等待完全乾燥。</span></li>
+                        <li className="flex gap-3"><span className="bg-pink-100 text-pink-600 w-6 h-6 rounded-full flex items-center justify-center shrink-0">3</span> <span><span className="text-gray-900">貼果凍膠：</span>挑選合適大小的果凍膠貼在指甲上，用力按壓擠出空氣。</span></li>
+                        <li className="flex gap-3"><span className="bg-pink-100 text-pink-600 w-6 h-6 rounded-full flex items-center justify-center shrink-0">4</span> <span><span className="text-gray-900">按壓貼合：</span>撕下保護膜，將穿戴甲以 45 度角從指根推入，用力按壓 15 秒。</span></li>
+                      </ol>
+                    </div>
+                    
+                    {/* 卸除步驟 */}
+                    <div className="bg-white border border-gray-100 p-6 rounded-2xl shadow-sm hover:shadow-md transition">
+                      <h3 className="font-bold text-lg mb-4 text-gray-600 flex items-center gap-2"><span>🛁</span> 無痛卸除方式</h3>
+                      <ul className="space-y-4 text-sm font-bold">
+                        <li className="flex gap-3"><span className="bg-gray-100 text-gray-500 w-6 h-6 rounded-full flex items-center justify-center shrink-0">1</span> <span><span className="text-gray-900">溫水浸泡：</span>將雙手浸泡在溫水中約 3-5 分鐘，讓果凍膠軟化。</span></li>
+                        <li className="flex gap-3"><span className="bg-gray-100 text-gray-500 w-6 h-6 rounded-full flex items-center justify-center shrink-0">2</span> <span><span className="text-gray-900">邊緣撬起：</span>使用附贈的小木棒，從指甲側面輕輕撬開一小縫。</span></li>
+                        <li className="flex gap-3"><span className="bg-gray-100 text-gray-500 w-6 h-6 rounded-full flex items-center justify-center shrink-0">3</span> <span><span className="text-gray-900">慢慢推開：</span>順著縫隙慢慢將甲片推下，<b className="text-red-400">請勿暴力硬拔！</b></span></li>
+                        <li className="flex gap-3"><span className="bg-gray-100 text-gray-500 w-6 h-6 rounded-full flex items-center justify-center shrink-0">4</span> <span><span className="text-gray-900">殘膠清理：</span>將甲片與真甲上的殘膠搓除，甲片即可收納重複使用。</span></li>
+                      </ul>
+                    </div>
+                  </div>
+                  <p className="text-xs text-center text-gray-400 font-bold mt-4">💡 貼心提醒：剛貼好的前 2 小時盡量不要碰水，可以讓果凍膠更持久喔！</p>
+                </div>
+
+                {/* 專業美甲製作流程區 */}
+                <h2 className="text-2xl font-black mb-6 text-gray-900 border-b-2 border-pink-100 pb-4">💅 專業美甲製作流程</h2>
+                <section className="bg-[#fbf6e9] p-6 md:p-8 rounded-3xl relative overflow-hidden border border-[#f0e8d5]">
                   <div className="absolute top-0 right-0 w-40 h-40 bg-white/60 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none"></div>
                   <div className="relative z-10">
                     <p className="text-amber-700/60 font-black text-xl italic mb-1">Nail salon</p>
@@ -566,17 +657,13 @@
                     </div>
                   </div>
                 </section>
-                <h2 className="text-2xl font-black mb-6 text-gray-900 border-b-2 border-pink-100 pb-4">📏 尺寸測量與穿戴教學</h2>
-                <div className="space-y-8 text-gray-700 leading-relaxed">
-                   <p className="text-sm bg-gray-50 p-4 rounded-xl border border-gray-100 mb-4">💡 準備軟尺（或一般膠帶與直尺），沿著指甲最寬處的弧度平貼測量（請勿用力下壓）。</p>
-                </div>
               </div>
             </div>
           )}
 
           {/* 購物車 Modal */}
           {isCartOpen && (
-            <div className="fixed inset-0 z-50 flex justify-end">
+            <div className="fixed inset-0 z-[60] flex justify-end">
               <div className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity" onClick={() => setIsCartOpen(false)}></div>
               <div className="w-full max-w-md bg-white h-full relative flex flex-col shadow-2xl animate-fade-in-right">
                 <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50">
@@ -619,12 +706,23 @@
                       <textarea placeholder="手動填寫地址或使用下方超商按鈕" value={shippingAddress} onChange={e => setShippingAddress(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-pink-200 text-sm font-bold text-pink-700 outline-none bg-pink-50 resize-none h-16 mb-2"></textarea>
                     </div>
                   )}
+
+                  {cart.length > 0 && (
+                    <div className="bg-gray-50 p-4 rounded-2xl shadow-sm">
+                      <h3 className="font-bold text-gray-700 text-sm mb-2">🎁 專屬折扣碼</h3>
+                      <div className="flex gap-2">
+                        <input type="text" placeholder="輸入折扣碼" value={promoInput} onChange={e => setPromoInput(e.target.value)} className="flex-1 px-4 py-2 rounded-xl border border-gray-200 text-sm outline-none uppercase" />
+                        <button onClick={handleApplyPromo} className="bg-pink-500 text-white px-4 py-2 rounded-xl font-bold text-sm shadow-sm hover:bg-pink-600">套用</button>
+                      </div>
+                      {appliedPromo && <div className="mt-2 text-xs font-bold text-green-600">✅ 已套用：{appliedPromo.name}</div>}
+                    </div>
+                  )}
                 </div>
 
                 <div className="p-6 bg-white border-t border-gray-100 shadow-[0_-10px_20px_rgba(0,0,0,0.03)]">
                   <div className="space-y-2 mb-6 border-t border-gray-100 pt-4 text-sm font-bold text-gray-500">
                     <div className="flex justify-between"><span>商品小計</span><span>NT$ {cartSubtotal}</span></div>
-                    {eventDiscountAmount > 0 && <div className="flex justify-between text-pink-500"><span>🎊 開幕活動</span><span>- NT$ {eventDiscountAmount}</span></div>}
+                    {promoDiscountAmount > 0 && <div className="flex justify-between text-pink-500"><span>🎁 折扣折抵</span><span>- NT$ {promoDiscountAmount}</span></div>}
                     <div className="flex justify-between"><span>物流運費</span>{isFreeShipping ? <span className="text-green-500">免運費</span> : <span>NT$ {currentShippingFee}</span>}</div>
                     <div className="flex justify-between items-center pt-3 border-t border-gray-100 mt-2"><span className="text-gray-900 text-base">結帳總金額</span><span className="text-3xl font-black text-pink-600">NT$ {finalTotal}</span></div>
                   </div>
