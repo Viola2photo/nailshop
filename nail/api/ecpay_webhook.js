@@ -57,13 +57,24 @@ module.exports = async (req, res) => {
     // RtnCode === '1' 代表付款成功
     if (data.RtnCode === '1') {
       const MerchantTradeNo = data.MerchantTradeNo;
+      const orderRef = db.collection('artifacts').doc(appId).collection('users').doc(adminUserId).collection('orders').doc(MerchantTradeNo);
+      const orderSnap = await orderRef.get();
+      const existingOrder = orderSnap.exists ? orderSnap.data() : {};
+
+      const customerInfo = {
+        name: existingOrder.customerInfo?.name || data.CustomField1 || data.SenderName || '',
+        phone: existingOrder.customerInfo?.phone || data.CustomField2 || data.SenderPhone || '',
+        address: existingOrder.customerInfo?.address || data.CustomField3 || data.CVSAddress || ''
+      };
 
       // 更新 Firebase 訂單狀態為已付款
-      await db.collection('artifacts').doc(appId).collection('users').doc(adminUserId).collection('orders').doc(MerchantTradeNo).update({
-        status: 'paid',             // 狀態改成已付款！此時您的後台就會看到顏色變綠色
+      await orderRef.update({
+        status: 'paid',
         paidAt: new Date().toISOString(),
         paymentType: data.PaymentType, // 記錄客人是用信用卡還是超商付的
-        tradeNo: data.TradeNo          // 綠界的交易序號 (方便日後對帳退款)
+        tradeNo: data.TradeNo,         // 綠界的交易序號 (方便日後對帳退款)
+        customerInfo,
+        ecpayRaw: data
       });
       
       // 💡 如果未來想加「自動寄出 Email」，程式碼可以寫在這裡。

@@ -77,16 +77,15 @@ module.exports = async (req, res) => {
     await db.collection('artifacts').doc(appId).collection('users').doc(adminUserId).collection('orders').doc(MerchantTradeNo).set({
       id: MerchantTradeNo,
       customerInfo: {
-        name: body.customerInfo?.name || body.name || '未提供',
-        phone: body.customerInfo?.phone || body.phone || '未提供',
-        address: body.customerInfo?.address || body.address || '未提供',
-        storeName: body.customerInfo?.storeName || '',
-        storeAddress: body.customerInfo?.storeAddress || ''
+        name: body.name || '未提供',
+        phone: body.phone || '未提供',
+        address: body.address || '未提供'
       },
       items: orderItems,
       totalAmount: finalTotal, // 這是後端算好的正確總額 (商品+運費)
       discountAmount: discountAmount,
       shippingFee: currentShippingFee,
+      paymentMethod,
       status: 'pending',
       createdAt: new Date().toISOString()
     });
@@ -105,10 +104,14 @@ module.exports = async (req, res) => {
     const ReturnURL = `${protocol}://${host}/api/ecpay_webhook`; 
     const OrderResultURL = `${protocol}://${host}/shop.html?order=success`; 
 
+    const logisticsAddress = body.customerInfo?.address || '';
+    const receiverName = body.customerInfo?.name || '';
+    const receiverPhone = body.customerInfo?.phone || '';
+
     const params = {
       ChoosePayment: paymentMethod, // 支援 CVS (超商) 或 ALL
       EncryptType: '1', 
-      ItemName: '指尖造藝美甲訂單(含運費)',
+      ItemName: `指尖造藝美甲訂單(含運費) | ${receiverName} | ${receiverPhone}`,
       MerchantID: MerchantID, 
       MerchantTradeDate: MerchantTradeDate,
       MerchantTradeNo: MerchantTradeNo, 
@@ -116,13 +119,15 @@ module.exports = async (req, res) => {
       PaymentType: 'aio', 
       ReturnURL: ReturnURL,
       TotalAmount: finalTotal.toString(), // 🛡️ 傳送包含運費的正確數字
-      TradeDesc: '指尖造藝官網訂單',
-      SenderName: body.customerInfo?.name || body.name || '未提供',
-      SenderPhone: body.customerInfo?.phone || body.phone || '0000000000',
-      ReceiverName: body.customerInfo?.name || body.name || '未提供',
-      ReceiverPhone: body.customerInfo?.phone || body.phone || '0000000000',
-      ReceiverAddress: body.customerInfo?.address || body.address || '',
-      Remark: `門市: ${body.customerInfo?.storeName || ''} / ${body.customerInfo?.storeAddress || ''}`
+      TradeDesc: `指尖造藝官網訂單 - ${receiverName} / ${receiverPhone}`,
+      SenderName: receiverName,
+      SenderPhone: receiverPhone,
+      ReceiverName: receiverName,
+      ReceiverPhone: receiverPhone,
+      ReceiverAddress: logisticsAddress,
+      CustomField1: receiverName,
+      CustomField2: receiverPhone,
+      CustomField3: logisticsAddress,
     };
 
     // 簽章邏輯
