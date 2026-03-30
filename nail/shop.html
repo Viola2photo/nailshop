@@ -336,6 +336,14 @@
               promoCode: appliedPromo ? appliedPromo.code : null,
               paymentMethod: paymentMethod,
               logisticsType: shippingLogisticsType,
+              customerInfo: { name: customerName, phone: customerPhone, address: shippingAddress },
+              total: finalTotal
+            }) 
+          });
+          
+          if (!response.ok) throw new Error('結帳連線失敗');
+          const html = await response.text();
+          document.open(); document.write(html); document.close();
 
         } catch(e) {
           console.error(e);
