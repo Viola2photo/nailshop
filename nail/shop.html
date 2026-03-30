@@ -68,7 +68,6 @@
 
     const ProductCard = ({ product, onClick }) => {
       const [mediaIndex, setMediaIndex] = useState(0);
-    const availableSizes = product.stock ? Object.entries(product.stock).filter(([, qty]) => qty > 0).map(([size]) => size).join(', ') : 'N/A';
 
       useEffect(() => {
         let interval;
@@ -107,8 +106,17 @@
           
           <div className="px-2 flex-1 flex flex-col text-center pb-2">
             <h3 className="font-black text-gray-900 text-base md:text-lg mb-1 truncate tracking-tighter">{product.name}</h3>
-            <p className="text-xs font-black text-gray-500 mb-1">可售尺寸：{availableSizes || '尚無庫存'}</p>
-            <p className="text-pink-600 font-black text-sm md:text-base mt-auto">NT$ {product.price}</p>
+            <p className="text-pink-600 font-black text-sm md:text-base mt-1">NT$ {product.price}</p>
+            <div className="mt-2 flex flex-wrap justify-center gap-1 text-[9px]">
+              {['XS','S','M','L'].map(size => {
+                const inStock = product.stock?.[size] > 0;
+                return (
+                  <span key={size} className={`px-2 py-1 rounded-full font-black ${inStock ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'}`}>
+                    {size}{inStock ? '有貨' : '缺貨'}
+                  </span>
+                );
+              })}
+            </div>
           </div>
         </div>
       );
@@ -135,11 +143,10 @@
 
       const [promoInput, setPromoInput] = useState('');
       const [appliedPromo, setAppliedPromo] = useState(null);
+      const [paymentMethod, setPaymentMethod] = useState('ALL');
       const [customerName, setCustomerName] = useState('');
       const [customerPhone, setCustomerPhone] = useState('');
       const [shippingAddress, setShippingAddress] = useState('');
-      const [shippingStoreName, setShippingStoreName] = useState('');
-      const [shippingStoreAddress, setShippingStoreAddress] = useState('');
       const [isGuideOpen, setIsGuideOpen] = useState(false);
 
       useEffect(() => {
@@ -175,12 +182,9 @@
       useEffect(() => {
         const handleMessage = (event) => {
           // 在實際部署時，建議檢查 event.origin 以增強安全性
-          if (event.origin !== window.location.origin) return;
           if (event.data && event.data.type === 'ECPAY_MAP_RESULT') {
             const { storeName, storeAddress } = event.data;
-            setShippingStoreName(storeName || '未選擇門市');
-            setShippingStoreAddress(storeAddress || '');
-            setShippingAddress(`【${storeName || ''}】 ${storeAddress || ''}`);
+            setShippingAddress(`[${storeName}] ${storeAddress}`);
           }
         };
         window.addEventListener('message', handleMessage);
@@ -261,7 +265,7 @@
       };
 
       const handleCheckout = async () => {
-        if (!customerName || !customerPhone || !shippingAddress || !shippingStoreName) { alert('請填寫完整資訊並選擇取件門市！'); return; }
+        if (!customerName || !customerPhone || !shippingAddress) { alert('請填寫完整資訊並選擇取件門市！'); return; }
         setIsCheckingOut(true);
         try {
           const orderItems = cart.map(item => ({
@@ -294,13 +298,8 @@
               orderId: orderId,
               items: orderItems,
               promoCode: appliedPromo ? appliedPromo.code : null,
-              customerInfo: { 
-                name: customerName, 
-                phone: customerPhone, 
-                address: shippingAddress, 
-                storeName: shippingStoreName, 
-                storeAddress: shippingStoreAddress 
-              },
+              paymentMethod: paymentMethod,
+              customerInfo: { name: customerName, phone: customerPhone, address: shippingAddress },
               total: finalTotal 
             }) 
           });
@@ -325,6 +324,7 @@
               orderId: order.orderId,
               items: order.items,
               promoCode: order.promoCode,
+              paymentMethod: order.paymentMethod || 'ALL',
               customerInfo: order.customerInfo,
               total: order.totalAmount 
             }) 
@@ -420,7 +420,7 @@
             {viewMode === 'shop' ? (
               isLoading ? <div className="text-center py-20 text-gray-300 font-black animate-pulse">LOADING COLLECTION...</div> : (
                 <>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-8">
+                  <div className="grid grid-cols-1 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-8">
                     {filteredProducts.slice(0, visibleCount).map(product => (
                       <ProductCard key={product.id} product={product} onClick={openProductModal} />
                     ))}
@@ -538,7 +538,7 @@
                   <button onClick={() => setIsCartOpen(false)} className="w-10 h-10 flex items-center justify-center bg-gray-100 rounded-full font-black">✕</button>
                 </div>
                 <div className="flex-1 overflow-y-auto p-8 space-y-6">
-                  {cart.length === 0 ? <p className="text-center py-20 text-gray-300 font-black italic">購物車目前空空如也</p> : (
+                  {cart.length === 0 ? <p className="text-center py-20 text-gray-300 font-black italic">YOUR BAG IS EMPTY</p> : (
                     <>
                       {cart.map((item, idx) => (
                         <div key={idx} className="flex gap-5 pb-6 border-b border-gray-50">
@@ -555,18 +555,27 @@
                       ))}
                       
                       <div className="bg-gray-50 p-6 rounded-[2rem] border border-gray-100 space-y-4">
-                        <h3 className="font-black text-gray-900 text-xs uppercase tracking-widest border-b pb-2">運送資訊</h3>
-                        <input type="text" placeholder="收件人姓名" value={customerName} onChange={e => setCustomerName(e.target.value)} className="w-full px-5 py-3.5 rounded-2xl border-none bg-white text-xs font-black shadow-sm" />
+                        <h3 className="font-black text-gray-900 text-xs uppercase tracking-widest border-b pb-2">Shipping Info</h3>
+                        <input type="text" placeholder="收件人真實姓名" value={customerName} onChange={e => setCustomerName(e.target.value)} className="w-full px-5 py-3.5 rounded-2xl border-none bg-white text-xs font-black shadow-sm" />
                         <input type="tel" placeholder="收件人手機號碼" value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} className="w-full px-5 py-3.5 rounded-2xl border-none bg-white text-xs font-black shadow-sm" />
                         
                         <div className="space-y-2">
-                           <textarea placeholder="點擊下方按鈕選擇門市" value={shippingAddress || '尚未選擇門市'} readOnly className="w-full px-5 py-3.5 rounded-2xl border-none bg-pink-50/50 text-pink-700 text-[11px] font-black h-20 shadow-inner resize-none"></textarea>
-                           <p className="text-[10px] text-gray-500">已選門市：{shippingStoreName || '無'} / 地址：{shippingStoreAddress || '無'}</p>
+                           <textarea placeholder="點擊下方按鈕選擇門市" value={shippingAddress} readOnly className="w-full px-5 py-3.5 rounded-2xl border-none bg-pink-50/50 text-pink-700 text-[11px] font-black h-20 shadow-inner resize-none"></textarea>
                            <div className="grid grid-cols-2 gap-3">
                               <button onClick={() => window.open('/api/ecpay_map?logisticsType=UNIMARTC2C', 'ecpay_map', 'width=1000,height=700')} className="py-3 bg-white text-green-600 rounded-2xl text-[10px] font-black border border-green-100 shadow-sm hover:bg-green-50 transition-all uppercase">🏪 7-11 門市</button>
                               <button onClick={() => window.open('/api/ecpay_map?logisticsType=FAMIC2C', 'ecpay_map', 'width=1000,height=700')} className="py-3 bg-white text-blue-600 rounded-2xl text-[10px] font-black border border-blue-100 shadow-sm hover:bg-blue-50 transition-all uppercase">🏪 全家 門市</button>
                            </div>
                         </div>
+                      </div>
+
+                      <div className="bg-white p-6 rounded-2xl border border-gray-100 mt-4">
+                        <label className="text-[10px] font-black text-gray-600 uppercase tracking-widest mb-1 block">付款方式</label>
+                        <select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-gray-200 text-xs font-black">
+                          <option value="ALL">可接受所有付款</option>
+                          <option value="Credit">信用卡</option>
+                          <option value="CVS">超商付款</option>
+                          <option value="ATM">網路ATM</option>
+                        </select>
                       </div>
 
                       <div className="bg-white p-4 rounded-3xl border border-gray-100 shadow-sm">
@@ -588,7 +597,7 @@
                     <div className="flex justify-between items-center pt-4 border-t border-gray-100 mt-2"><span className="text-gray-900 text-sm font-black">總金額</span><span className="text-3xl font-black text-pink-600 tracking-tighter">NT$ {finalTotal}</span></div>
                   </div>
                   <button disabled={cart.length === 0 || isCheckingOut} onClick={handleCheckout} className="w-full bg-gray-900 text-white py-5 rounded-3xl font-black text-sm hover:bg-pink-600 disabled:opacity-50 shadow-2xl transition-all tracking-[0.3em] uppercase">
-                    {isCheckingOut ? '處理中...' : '結帳 💳'}
+                    {isCheckingOut ? '處理中...' : '立即結帳'}
                   </button>
                 </div>
               </div>
@@ -610,7 +619,7 @@
                       <ul className="list-decimal ml-5 space-y-3 text-gray-600">
                         <li>拿出一捲<span className="text-pink-600">軟尺</span>，平貼於指甲表面「最寬處」的弧度。</li>
                         <li>測量雙手十隻指頭（慣用手通常較大），記錄下各指公釐(mm)數值。</li>
-                        <li><span className="text-pink-600">💡 建議依照實際測量直接選擇對應尺寸：</span>若甲片太緊可能會壓肉；太大可使用銼條適度修整，避免因硬度高而造成不適。</li>
+                        <li><span className="text-pink-600">💡 建議根據實際尺寸選擇：</span>若數值介於中間，建議可先測量正確數值後再選擇，若甲片硬且不易磨，切勿過度擠壓，以免壓迫肉面。
                       </ul>
                    </div>
 
