@@ -476,14 +476,15 @@
               <div className="absolute inset-0 bg-black/70 backdrop-blur-sm transition-opacity" onClick={() => setSelectedProduct(null)}></div>
               <div className="bg-white rounded-[2rem] w-full max-w-4xl max-h-[90vh] overflow-y-auto relative z-50 shadow-2xl flex flex-col md:flex-row animate-fade-in-up">
                 
-                <button onClick={() => setSelectedProduct(null)} className="absolute top-4 right-4 w-10 h-10 flex items-center justify-center bg-gray-100 hover:bg-gray-200 rounded-full font-bold text-gray-600 transition-colors z-20 shadow-sm">✕</button>
+                {/* 💡 關閉按鈕：加上半透明白色背景，確保在手機版蓋在圖片上方時也能看清楚 */}
+                <button onClick={() => setSelectedProduct(null)} className="absolute top-4 right-4 w-10 h-10 flex items-center justify-center bg-white/80 backdrop-blur-md hover:bg-white rounded-full font-bold text-gray-800 transition-colors z-20 shadow-md">✕</button>
                 
-                {/* 💡 左側大圖：加入放大鏡圖示與點擊事件 */}
-                <div className="md:w-1/2 bg-gray-900 flex overflow-x-auto snap-x snap-mandatory hide-scrollbar relative">
+                {/* 💡 左側大圖：加入 w-full 與 shrink-0 確保手機版正確佔據空間，並將底色改為柔和的 gray-50 */}
+                <div className="w-full md:w-1/2 shrink-0 bg-gray-50 flex overflow-x-auto snap-x snap-mandatory hide-scrollbar relative">
                   {selectedProduct.media?.map((m, idx) => (
-                    <div key={idx} className="w-full flex-shrink-0 snap-center aspect-[4/5] md:aspect-auto flex items-center justify-center relative group">
+                    <div key={idx} className="w-full flex-shrink-0 snap-center aspect-[4/5] md:aspect-auto md:h-full flex items-center justify-center relative group">
                        {m.type === 'video' ? 
-                         <video src={m.url} className="w-full h-full object-cover opacity-90" autoPlay muted loop playsInline /> :
+                         <video src={m.url} className="w-full h-full object-cover opacity-95" autoPlay muted loop playsInline /> :
                          <img 
                            src={m.url} 
                            onClick={() => setFullScreenImage(m.url)} 
@@ -495,7 +496,7 @@
                        {m.type !== 'video' && (
                          <button 
                            onClick={() => setFullScreenImage(m.url)} 
-                           className="absolute bottom-6 right-6 bg-black/60 text-white font-bold px-4 py-2 text-sm rounded-full backdrop-blur-md shadow-lg flex items-center gap-2 hover:bg-pink-500 transition-colors"
+                           className="absolute bottom-4 right-4 md:bottom-6 md:right-6 bg-black/60 text-white font-bold px-4 py-2 text-sm rounded-full backdrop-blur-md shadow-lg flex items-center gap-2 hover:bg-pink-500 transition-colors"
                          >
                            🔍 點擊放大
                          </button>
@@ -503,11 +504,11 @@
                     </div>
                   ))}
                   {(!selectedProduct.media || selectedProduct.media.length === 0) && (
-                     <div className="w-full aspect-[4/5] flex items-center justify-center text-gray-500">無圖片</div>
+                     <div className="w-full aspect-[4/5] flex items-center justify-center text-gray-400 font-bold">無圖片</div>
                   )}
                 </div>
 
-                <div className="md:w-1/2 p-6 md:p-10 flex flex-col">
+                <div className="w-full md:w-1/2 p-6 md:p-10 flex flex-col">
                   {selectedProduct.shape && <span className="inline-block bg-pink-50 text-pink-600 text-xs font-bold px-4 py-1.5 rounded-full mb-3 w-max">{selectedProduct.shape}</span>}
                   
                   <h2 className="text-2xl md:text-3xl font-black text-gray-900 mb-2 leading-tight">{selectedProduct.name}</h2>
