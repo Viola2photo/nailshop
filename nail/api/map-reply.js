@@ -1,52 +1,51 @@
-// 檔案路徑： /api/map-reply.js
 export default function handler(req, res) {
-  // 綠界規定只接受 POST 請求
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: '只允許 POST 請求' });
-  }
+  // 1. 取得前端傳來的超商類型 (例如 UNIMART 代表 7-11，FAMI 代表全家)
+  const { logisticsType } = req.query;
 
-  // 綠界地圖會用 POST 方式回傳這些門市資料給我們
-  const { CVSStoreID, CVSStoreName, CVSAddress } = req.body;
+  // 🔴 2. 綠界特店編號 (MerchantID)
+  // 您可以先用 3411891 進行測試。等正式上線營運時，再換成您自己申請的 MerchantID
+  const merchantID = '3411891'; 
+  
+  // 3. 綠界地圖的正式網址 (注意：這裡必須是純字串，不能有任何中括號)
+  const mapUrl = 'https://logistics.ecpay.com.tw/Express/map';
 
-  // 產生一段 HTML，利用 JavaScript 將資料傳回母視窗 (購物車)
+  // 4. 自動判斷您目前網站的網域，產生要綠界把資料送回來的 ServerReplyURL
+  const protocol = req.headers['x-forwarded-proto'] || 'http';
+  const host = req.headers.host;
+  // 這裡組合出來的網址會像這樣： https://nailshop-tau.vercel.app/api/map-reply
+  const serverReplyUrl = `${protocol}://${host}/api/map-reply`;
+
+  // 5. 產生一個會自動將資料 POST 給綠界的隱藏表單
   const html = `
     <!DOCTYPE html>
     <html lang="zh-TW">
     <head>
       <meta charset="utf-8">
-      <title>門市選擇成功</title>
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>正在導向超商地圖...</title>
       <style>
         body { background-color: #FAF9F8; display: flex; justify-content: center; align-items: center; height: 100vh; font-family: sans-serif; margin: 0; }
-        .success-box { text-align: center; color: #10b981; font-weight: bold; }
-        .check-icon { font-size: 40px; margin-bottom: 10px; }
+        .spinner { width: 40px; height: 40px; border: 4px solid rgba(236,72,153,0.2); border-top-color: #ec4899; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 16px auto; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
       </style>
     </head>
     <body>
-      <div class="success-box">
-        <div class="check-icon">✅</div>
-        <p>門市選擇成功！正在將資料帶回購物車...</p>
+      <div style="text-align: center; color: #ec4899; font-weight: bold;">
+        <div class="spinner"></div>
+        <p>正在為您連接至綠界超商地圖，請稍候...</p>
       </div>
+      
+      <!-- 這個表單一載入就會立刻被執行 submit -->
+      <form id="mapForm" method="POST" action="${mapUrl}">
+        <input type="hidden" name="MerchantID" value="${merchantID}" />
+        <input type="hidden" name="LogisticsType" value="CVS" />
+        <input type="hidden" name="LogisticsSubType" value="${logisticsType || 'UNIMART'}" />
+        <input type="hidden" name="IsCollection" value="N" />
+        <input type="hidden" name="ServerReplyURL" value="${serverReplyUrl}" />
+      </form>
+      
       <script>
-        // 檢查這個視窗是否是由購物車 (window.opener) 打開的
-        if (window.opener) {
-          // 將取得的門市資料包裝起來
-          const messageData = {
-            type: 'ECPAY_MAP_RESULT',
-            storeId: '${CVSStoreID}',
-            storeName: '${CVSStoreName}',
-            storeAddress: '${CVSAddress}'
-          };
-          
-          // 隔空傳送給購物車母視窗！ ('*' 代表允許傳給任何網域的母視窗)
-          window.opener.postMessage(messageData, '*');
-          
-          // 傳送完畢後，自動關閉這個彈出的小視窗
-          setTimeout(() => {
-            window.close();
-          }, 500);
-        } else {
-          document.body.innerHTML = '<h3 style="color:red; text-align:center; margin-top:50px;">錯誤：無法找到原本的購物車頁面，請關閉視窗重新操作。</h3>';
-        }
+        document.getElementById('mapForm').submit();
       </script>
     </body>
     </html>
