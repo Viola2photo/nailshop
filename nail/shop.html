@@ -27,7 +27,6 @@
       .hide-scrollbar::-webkit-scrollbar { display: none; }
       .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
       html { scroll-behavior: smooth; }
-      /* 修正自動切換時的過渡感 */
       .fade-media { transition: opacity 0.3s ease-in-out; }
     </style>
     <div class="preloader">
@@ -254,6 +253,7 @@
         }
       };
 
+      // 💡 首次結帳
       const handleCheckout = async () => {
         if (!customerName || !customerPhone || !shippingAddress) { alert('請填寫完整資訊並選擇取件門市！'); return; }
         setIsCheckingOut(true);
@@ -275,12 +275,11 @@
                 totalAmount: finalTotal,
                 customerInfo: { name: customerName, phone: customerPhone, address: shippingAddress },
                 promoCode: appliedPromo ? appliedPromo.code : null,
-                status: 'pending',
+                status: 'pending', // 初始狀態待付款
                 createdAt: new Date().toISOString()
              });
           }
 
-          // 💡 呼叫 API 進入綠界結帳
           const response = await fetch('/api/ecpay', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -299,8 +298,43 @@
 
         } catch(e) {
           console.error(e);
-          alert('【系統提示】因為目前尚無實體結帳後端，模擬訂單已存入您的帳戶。');
+          alert('【系統提示】目前無後端服務，模擬訂單已存入帳戶，請至「我的訂單」查看。');
           setCart([]); setIsCartOpen(false); setViewMode('orders'); setIsCheckingOut(false);
+        }
+      };
+
+      // 💡 繼續結帳 (棄單挽回)
+      const handleResumeCheckout = async (order) => {
+        try {
+          alert('即將帶您前往綠界重新選擇付款方式...');
+          const response = await fetch('/api/ecpay', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              orderId: order.orderId,
+              items: order.items,
+              promoCode: order.promoCode,
+              customerInfo: order.customerInfo,
+              total: order.totalAmount 
+            }) 
+          });
+          if (!response.ok) throw new Error('結帳連線失敗');
+          const html = await response.text();
+          document.open(); document.write(html); document.close();
+        } catch(e) {
+          console.error(e);
+          alert('【系統提示】無法連線至綠界金流服務。');
+        }
+      };
+
+      // 轉換訂單狀態為中文標籤
+      const getStatusBadge = (status) => {
+        switch(status) {
+          case 'pending': return <span className="bg-amber-100 text-amber-700 text-xs px-3 py-1.5 rounded-full font-bold">⏳ 待付款</span>;
+          case 'paid': return <span className="bg-blue-100 text-blue-700 text-xs px-3 py-1.5 rounded-full font-bold">✅ 已付款</span>;
+          case 'processing': return <span className="bg-purple-100 text-purple-700 text-xs px-3 py-1.5 rounded-full font-bold">💅 製作中</span>;
+          case 'shipped': return <span className="bg-green-100 text-green-700 text-xs px-3 py-1.5 rounded-full font-bold">🚚 已出貨</span>;
+          default: return <span className="bg-gray-100 text-gray-700 text-xs px-3 py-1.5 rounded-full font-bold">{status}</span>;
         }
       };
 
@@ -310,7 +344,6 @@
              聯絡我們 : viola.lomography@gmail.com
           </div>
 
-          {/* Header */}
           <header className="bg-white/95 backdrop-blur-md sticky top-0 z-40 border-b border-gray-100 shadow-sm">
             <div className="max-w-6xl mx-auto px-4 md:px-5 py-3 md:py-4 flex justify-between items-center">
               <div className="flex items-center gap-3 cursor-pointer" onClick={() => setViewMode('shop')}>
@@ -352,7 +385,6 @@
             </div>
           </header>
 
-          {/* 分類吸頂 */}
           {viewMode === 'shop' && (
             <div className="sticky top-[60px] md:top-[76px] z-30 bg-white/95 backdrop-blur-md shadow-sm border-b border-gray-100 py-3 px-4">
               <div className="max-w-6xl mx-auto overflow-x-auto hide-scrollbar">
@@ -390,29 +422,57 @@
                 </>
               )
             ) : (
-              // 歷史訂單
+              // 💡 歷史訂單：加入進度查詢與繼續結帳按鈕
               <div className="max-w-3xl mx-auto animate-fade-in-up">
                  <h2 className="text-2xl font-black text-gray-900 mb-8 flex items-center gap-4">
-                    <button onClick={() => setViewMode('shop')} className="text-gray-400">←</button> 📦 我的訂單
+                    <button onClick={() => setViewMode('shop')} className="text-gray-400 hover:text-pink-500 transition">← 返回購物</button> 
                  </h2>
-                 {userOrders.length === 0 ? <p className="text-center py-20 text-gray-400">尚無購買記錄</p> : (
+                 {userOrders.length === 0 ? <p className="text-center py-20 text-gray-400 font-bold bg-white rounded-3xl shadow-sm border border-gray-100">尚無購買記錄 🥺</p> : (
                    <div className="space-y-6">
                      {userOrders.map(order => (
-                       <div key={order.id} className="bg-white rounded-3xl p-6 border border-gray-100 shadow-sm">
+                       <div key={order.id} className="bg-white rounded-3xl p-6 border border-gray-100 shadow-sm hover:shadow-md transition">
                           <div className="flex justify-between items-center mb-4 pb-4 border-b border-gray-50">
-                             <span className="text-xs text-gray-400 font-bold">{new Date(order.createdAt).toLocaleString()}</span>
-                             <span className="bg-pink-50 text-pink-600 text-[10px] px-2 py-1 rounded-md font-bold">{order.status}</span>
-                          </div>
-                          {order.items?.map((item, idx) => (
-                             <div key={idx} className="flex justify-between items-center text-sm mb-2 font-bold">
-                                <span>{item.name} ({item.size}) x{item.quantity}</span>
-                                <span>NT$ {item.price * item.quantity}</span>
+                             <div>
+                               <span className="text-xs text-gray-400 font-bold block mb-1">{new Date(order.createdAt).toLocaleString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+                               <span className="text-xs font-bold text-gray-500">訂單編號: {order.orderId}</span>
                              </div>
-                          ))}
-                          <div className="mt-4 pt-4 border-t border-gray-50 text-right">
-                             <span className="text-xs text-gray-400 block">總金額</span>
-                             <span className="text-xl font-black text-pink-600">NT$ {order.totalAmount}</span>
+                             {getStatusBadge(order.status)}
                           </div>
+                          
+                          <div className="space-y-3 mb-4">
+                            {order.items?.map((item, idx) => (
+                               <div key={idx} className="flex justify-between items-center text-sm font-bold bg-gray-50 p-3 rounded-xl">
+                                  <div className="flex flex-col">
+                                    <span className="text-gray-900">{item.name}</span>
+                                    <span className="text-xs text-gray-500">尺寸: {item.size} / 數量: {item.quantity}</span>
+                                  </div>
+                                  <span className="text-pink-600">NT$ {item.price * item.quantity}</span>
+                               </div>
+                            ))}
+                          </div>
+
+                          <div className="pt-4 border-t border-gray-50 flex justify-between items-end">
+                             <div className="text-xs text-gray-500 font-bold">
+                               <p className="mb-1">📍 配送至：</p>
+                               <p className="text-gray-700 max-w-[200px] truncate">{order.customerInfo?.address}</p>
+                             </div>
+                             <div className="text-right">
+                               <span className="text-xs text-gray-400 block mb-1">訂單總金額</span>
+                               <span className="text-2xl font-black text-pink-600">NT$ {order.totalAmount}</span>
+                             </div>
+                          </div>
+
+                          {/* 如果狀態是 pending (待付款)，顯示繼續結帳按鈕 */}
+                          {order.status === 'pending' && (
+                             <div className="mt-5 pt-5 border-t border-gray-100">
+                                <button 
+                                  onClick={() => handleResumeCheckout(order)}
+                                  className="w-full bg-pink-500 text-white py-3 rounded-xl font-bold hover:bg-pink-600 transition flex items-center justify-center gap-2 shadow-sm"
+                                >
+                                  💳 訂單尚未付款，點此繼續結帳
+                                </button>
+                             </div>
+                          )}
                        </div>
                      ))}
                    </div>
@@ -497,7 +557,10 @@
                         <textarea placeholder="點擊下方地圖選擇門市" value={shippingAddress} readOnly className="w-full px-4 py-3 rounded-xl border border-pink-200 text-sm font-bold text-pink-700 bg-pink-50 h-16 mb-2"></textarea>
                         
                         {/* 💡 修正地圖連結：指向 /api/map */}
-                        <button onClick={() => window.open('/api/map?logisticsType=UNIMART', 'ecpay_map', 'width=800,height=600')} className="w-full py-2.5 bg-pink-100 text-pink-600 rounded-xl text-xs font-bold hover:bg-pink-200 transition-colors">🗺️ 開啟超商地圖選擇門市</button>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button onClick={() => window.open('/api/map?logisticsType=UNIMART', 'ecpay_map', 'width=800,height=600')} className="w-full py-2.5 bg-green-50 text-green-700 rounded-xl text-xs font-bold hover:bg-green-100 transition-colors border border-green-200">🏪 選擇 7-11 門市</button>
+                          <button onClick={() => window.open('/api/map?logisticsType=FAMI', 'ecpay_map', 'width=800,height=600')} className="w-full py-2.5 bg-blue-50 text-blue-700 rounded-xl text-xs font-bold hover:bg-blue-100 transition-colors border border-blue-200">🏪 選擇 全家 門市</button>
+                        </div>
                       </div>
                       <div className="bg-gray-50 p-4 rounded-2xl shadow-sm">
                         <h3 className="font-bold text-gray-700 text-sm mb-2 tracking-wide">🎁 折扣碼</h3>
@@ -544,7 +607,7 @@
                    </div>
                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
                       <div className="bg-white border border-gray-100 p-4 rounded-xl shadow-sm"><p className="text-pink-600 font-black">XS</p><p className="text-[10px] text-gray-400">小手首選</p></div>
-                      <div className="bg-pink-50 border-2 border-pink-400 p-4 rounded-xl shadow-md"><p className="text-pink-600 font-black">S</p><p className="text-[10px] text-pink-600">約70-80%人適用</p></div>
+                      <div className="bg-pink-50 border-2 border-pink-400 p-4 rounded-xl shadow-md"><p className="text-pink-600 font-black text-xl">S</p><p className="text-xs font-bold text-pink-600 mt-1">約70-80%人適用</p></div>
                       <div className="bg-white border border-gray-100 p-4 rounded-xl shadow-sm"><p className="text-pink-600 font-black">M</p><p className="text-[10px] text-gray-400">一般大眾</p></div>
                       <div className="bg-white border border-gray-100 p-4 rounded-xl shadow-sm"><p className="text-pink-600 font-black">L</p><p className="text-[10px] text-gray-400">偏寬女孩</p></div>
                    </div>
