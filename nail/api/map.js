@@ -1,16 +1,14 @@
 export default function handler(req, res) {
   const { logisticsType } = req.query;
 
-  // 自動判斷抓取您的環境變數，若無則預設使用綠界測試特店編號 2000132
-  const merchantID = process.env.MERCHANT_ID || process.env.ECPAY_MERCHANT_ID || '2000132';
+  // 正式環境特店編號 (MerchantID)
+  const merchantID = '3411891';
   
-  // 自動判斷是否為測試環境，決定開啟哪一個綠界地圖網址
-  const isTest = process.env.IS_TEST === 'true';
-  const mapUrl = isTest 
-    ? 'https://logistics-stage.ecpay.com.tw/Express/map'
-    : 'https://logistics.ecpay.com.tw/Express/map';
+  // 綠界正式環境地圖網址
+  const mapUrl = 'https://logistics.ecpay.com.tw/Express/map';
 
-  // 組合回傳網址 (ServerReplyURL)，讓綠界知道選完門市後要將資料丟給誰 (丟給我們的 map-reply.js)
+  // 自動組合回傳網址 (ServerReplyURL)
+  // 讓綠界在使用者選完門市後，將資料 POST 回我們的 api/map-reply
   const protocol = req.headers['x-forwarded-proto'] || 'http';
   const host = req.headers.host;
   const serverReplyUrl = `${protocol}://${host}/api/map-reply`;
@@ -34,13 +32,15 @@ export default function handler(req, res) {
       <form id="mapForm" method="POST" action="${mapUrl}">
         <input type="hidden" name="MerchantID" value="${merchantID}" />
         <input type="hidden" name="LogisticsType" value="CVS" />
-        <input type="hidden" name="LogisticsSubType" value="${logisticsType}" />
+        <input type="hidden" name="LogisticsSubType" value="${logisticsType || 'UNIMART'}" />
         <input type="hidden" name="IsCollection" value="N" />
         <input type="hidden" name="ServerReplyURL" value="${serverReplyUrl}" />
       </form>
       <script>
-        // 網頁一載入就自動送出表單至綠界
-        document.getElementById('mapForm').submit();
+        // 網頁載入後立即自動送出表單至綠界正式環境
+        window.onload = function() {
+          document.getElementById('mapForm').submit();
+        };
       </script>
     </body>
     </html>
