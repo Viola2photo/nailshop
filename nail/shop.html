@@ -168,15 +168,50 @@
           dbData.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
           setProducts(dbData);
           setIsLoading(false);
+          const preloader = document.querySelector('.preloader');
+          if (preloader) {
+            preloader.style.opacity = '0';
+            setTimeout(() => preloader.style.display = 'none', 500);
+          }
+        }, (error) => {
+          console.error('inventory onSnapshot error', error);
+          setIsLoading(false);
+          const preloader = document.querySelector('.preloader');
+          if (preloader) {
+            preloader.style.opacity = '0';
+            setTimeout(() => preloader.style.display = 'none', 500);
+          }
         });
+
         return () => unsubscribe();
       }, []);
 
       useEffect(() => {
+        const preloader = document.querySelector('.preloader');
+        if (preloader) {
+          preloader.style.opacity = '0';
+          setTimeout(() => preloader.style.display = 'none', 500);
+        }
+
+        const fallbackTimer = setTimeout(() => {
+          if (isLoading) {
+            setIsLoading(false);
+          }
+          const preloader2 = document.querySelector('.preloader');
+          if (preloader2) {
+            preloader2.style.opacity = '0';
+            setTimeout(() => preloader2.style.display = 'none', 500);
+          }
+        }, 8000);
+
         const handleScroll = () => setShowScrollTop(window.scrollY > 400);
         window.addEventListener('scroll', handleScroll);
-        return () => window.removeEventListener('scroll', handleScroll);
-      }, []);
+
+        return () => {
+          clearTimeout(fallbackTimer);
+          window.removeEventListener('scroll', handleScroll);
+        };
+      }, [isLoading]);
 
       // 💡 超商地圖監聽器：當 map-reply.js 回傳 postMessage 時，更新地址
       useEffect(() => {
