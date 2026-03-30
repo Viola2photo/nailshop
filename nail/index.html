@@ -322,6 +322,24 @@
         } catch (error) { showToast("狀態更新失敗", "error"); }
       };
 
+      // 刪除已取消訂單
+      const deleteCancelledOrder = async (orderId) => {
+        try {
+          const orderRef = db.collection('artifacts').doc(appId).collection('users').doc(adminUserId).collection('orders').doc(orderId);
+          const doc = await orderRef.get();
+          if (doc.exists && doc.data().status === 'cancelled') {
+            await orderRef.delete();
+            showToast(`已刪除取消訂單：${orderId}`);
+            if (selectedOrder?.id === orderId) setSelectedOrder(null);
+          } else {
+            showToast('只有已取消訂單可以刪除', 'error');
+          }
+        } catch (error) {
+          console.error(error);
+          showToast('刪除訂單失敗', 'error');
+        }
+      };
+
       // 批次調價儲存
       const handleBulkPriceSave = async () => {
         const changedItems = inventory.filter(item => bulkPrices[item.id] !== item.price);
@@ -547,6 +565,9 @@
                           <div className="flex flex-row md:flex-col justify-between items-center md:items-end gap-2">
                             <span className="font-black text-lg text-gray-900">NT$ {order.totalAmount?.toLocaleString()}</span>
                             {order.discountCode && <span className="text-[10px] font-black bg-orange-100 text-orange-600 px-2 py-1 rounded-md">代碼: {order.discountCode}</span>}
+                            {order.status === 'cancelled' && (
+                              <button onClick={(e) => { e.stopPropagation(); deleteCancelledOrder(order.id); }} className="mt-2 text-[10px] font-black bg-red-100 text-red-600 px-3 py-1 rounded-full hover:bg-red-200">刪除取消訂單</button>
+                            )}
                           </div>
                         </div>
                       ))}
@@ -784,6 +805,8 @@
                       <p><span className="text-gray-400 mr-2 inline-block w-12">姓名</span> {selectedOrder.customerInfo?.name}</p>
                       <p><span className="text-gray-400 mr-2 inline-block w-12">電話</span> {selectedOrder.customerInfo?.phone}</p>
                       <p><span className="text-gray-400 mr-2 inline-block w-12">地址</span> {selectedOrder.customerInfo?.address}</p>
+                      {selectedOrder.customerInfo?.storeName && <p><span className="text-gray-400 mr-2 inline-block w-12">門市</span> {selectedOrder.customerInfo?.storeName}</p>}
+                      {selectedOrder.customerInfo?.storeAddress && <p><span className="text-gray-400 mr-2 inline-block w-12">門市地址</span> {selectedOrder.customerInfo?.storeAddress}</p>}
                     </div>
                   </div>
 

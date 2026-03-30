@@ -68,6 +68,7 @@
 
     const ProductCard = ({ product, onClick }) => {
       const [mediaIndex, setMediaIndex] = useState(0);
+    const availableSizes = product.stock ? Object.entries(product.stock).filter(([, qty]) => qty > 0).map(([size]) => size).join(', ') : 'N/A';
 
       useEffect(() => {
         let interval;
@@ -106,6 +107,7 @@
           
           <div className="px-2 flex-1 flex flex-col text-center pb-2">
             <h3 className="font-black text-gray-900 text-base md:text-lg mb-1 truncate tracking-tighter">{product.name}</h3>
+            <p className="text-xs font-black text-gray-500 mb-1">可售尺寸：{availableSizes || '尚無庫存'}</p>
             <p className="text-pink-600 font-black text-sm md:text-base mt-auto">NT$ {product.price}</p>
           </div>
         </div>
@@ -136,6 +138,8 @@
       const [customerName, setCustomerName] = useState('');
       const [customerPhone, setCustomerPhone] = useState('');
       const [shippingAddress, setShippingAddress] = useState('');
+      const [shippingStoreName, setShippingStoreName] = useState('');
+      const [shippingStoreAddress, setShippingStoreAddress] = useState('');
       const [isGuideOpen, setIsGuideOpen] = useState(false);
 
       useEffect(() => {
@@ -171,9 +175,12 @@
       useEffect(() => {
         const handleMessage = (event) => {
           // 在實際部署時，建議檢查 event.origin 以增強安全性
+          if (event.origin !== window.location.origin) return;
           if (event.data && event.data.type === 'ECPAY_MAP_RESULT') {
             const { storeName, storeAddress } = event.data;
-            setShippingAddress(`[${storeName}] ${storeAddress}`);
+            setShippingStoreName(storeName || '未選擇門市');
+            setShippingStoreAddress(storeAddress || '');
+            setShippingAddress(`【${storeName || ''}】 ${storeAddress || ''}`);
           }
         };
         window.addEventListener('message', handleMessage);
@@ -254,7 +261,7 @@
       };
 
       const handleCheckout = async () => {
-        if (!customerName || !customerPhone || !shippingAddress) { alert('請填寫完整資訊並選擇取件門市！'); return; }
+        if (!customerName || !customerPhone || !shippingAddress || !shippingStoreName) { alert('請填寫完整資訊並選擇取件門市！'); return; }
         setIsCheckingOut(true);
         try {
           const orderItems = cart.map(item => ({
@@ -287,7 +294,13 @@
               orderId: orderId,
               items: orderItems,
               promoCode: appliedPromo ? appliedPromo.code : null,
-              customerInfo: { name: customerName, phone: customerPhone, address: shippingAddress },
+              customerInfo: { 
+                name: customerName, 
+                phone: customerPhone, 
+                address: shippingAddress, 
+                storeName: shippingStoreName, 
+                storeAddress: shippingStoreAddress 
+              },
               total: finalTotal 
             }) 
           });
@@ -407,7 +420,7 @@
             {viewMode === 'shop' ? (
               isLoading ? <div className="text-center py-20 text-gray-300 font-black animate-pulse">LOADING COLLECTION...</div> : (
                 <>
-                  <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-8">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-8">
                     {filteredProducts.slice(0, visibleCount).map(product => (
                       <ProductCard key={product.id} product={product} onClick={openProductModal} />
                     ))}
@@ -521,11 +534,11 @@
               <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setIsCartOpen(false)}></div>
               <div className="w-full max-w-md bg-white h-full relative flex flex-col shadow-2xl animate-fade-in-right rounded-l-[3rem]">
                 <div className="p-8 border-b border-gray-50 flex justify-between items-center">
-                  <h2 className="text-xl font-black tracking-tighter">My Bag 🛍️</h2>
+                  <h2 className="text-xl font-black tracking-tighter">購物車 🛍️</h2>
                   <button onClick={() => setIsCartOpen(false)} className="w-10 h-10 flex items-center justify-center bg-gray-100 rounded-full font-black">✕</button>
                 </div>
                 <div className="flex-1 overflow-y-auto p-8 space-y-6">
-                  {cart.length === 0 ? <p className="text-center py-20 text-gray-300 font-black italic">YOUR BAG IS EMPTY</p> : (
+                  {cart.length === 0 ? <p className="text-center py-20 text-gray-300 font-black italic">購物車目前空空如也</p> : (
                     <>
                       {cart.map((item, idx) => (
                         <div key={idx} className="flex gap-5 pb-6 border-b border-gray-50">
@@ -542,23 +555,24 @@
                       ))}
                       
                       <div className="bg-gray-50 p-6 rounded-[2rem] border border-gray-100 space-y-4">
-                        <h3 className="font-black text-gray-900 text-xs uppercase tracking-widest border-b pb-2">Shipping Info</h3>
-                        <input type="text" placeholder="收件人真實姓名" value={customerName} onChange={e => setCustomerName(e.target.value)} className="w-full px-5 py-3.5 rounded-2xl border-none bg-white text-xs font-black shadow-sm" />
+                        <h3 className="font-black text-gray-900 text-xs uppercase tracking-widest border-b pb-2">運送資訊</h3>
+                        <input type="text" placeholder="收件人姓名" value={customerName} onChange={e => setCustomerName(e.target.value)} className="w-full px-5 py-3.5 rounded-2xl border-none bg-white text-xs font-black shadow-sm" />
                         <input type="tel" placeholder="收件人手機號碼" value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} className="w-full px-5 py-3.5 rounded-2xl border-none bg-white text-xs font-black shadow-sm" />
                         
                         <div className="space-y-2">
-                           <textarea placeholder="點擊下方按鈕選擇門市" value={shippingAddress} readOnly className="w-full px-5 py-3.5 rounded-2xl border-none bg-pink-50/50 text-pink-700 text-[11px] font-black h-20 shadow-inner resize-none"></textarea>
+                           <textarea placeholder="點擊下方按鈕選擇門市" value={shippingAddress || '尚未選擇門市'} readOnly className="w-full px-5 py-3.5 rounded-2xl border-none bg-pink-50/50 text-pink-700 text-[11px] font-black h-20 shadow-inner resize-none"></textarea>
+                           <p className="text-[10px] text-gray-500">已選門市：{shippingStoreName || '無'} / 地址：{shippingStoreAddress || '無'}</p>
                            <div className="grid grid-cols-2 gap-3">
-                              <button onClick={() => window.open('/api/map?logisticsType=UNIMARTC2C', 'ecpay_map', 'width=1000,height=700')} className="py-3 bg-white text-green-600 rounded-2xl text-[10px] font-black border border-green-100 shadow-sm hover:bg-green-50 transition-all uppercase">🏪 7-11 門市</button>
-                              <button onClick={() => window.open('/api/map?logisticsType=FAMIC2C', 'ecpay_map', 'width=1000,height=700')} className="py-3 bg-white text-blue-600 rounded-2xl text-[10px] font-black border border-blue-100 shadow-sm hover:bg-blue-50 transition-all uppercase">🏪 全家 門市</button>
+                              <button onClick={() => window.open('/api/ecpay_map?logisticsType=UNIMARTC2C', 'ecpay_map', 'width=1000,height=700')} className="py-3 bg-white text-green-600 rounded-2xl text-[10px] font-black border border-green-100 shadow-sm hover:bg-green-50 transition-all uppercase">🏪 7-11 門市</button>
+                              <button onClick={() => window.open('/api/ecpay_map?logisticsType=FAMIC2C', 'ecpay_map', 'width=1000,height=700')} className="py-3 bg-white text-blue-600 rounded-2xl text-[10px] font-black border border-blue-100 shadow-sm hover:bg-blue-50 transition-all uppercase">🏪 全家 門市</button>
                            </div>
                         </div>
                       </div>
 
                       <div className="bg-white p-4 rounded-3xl border border-gray-100 shadow-sm">
                         <div className="flex gap-2">
-                           <input type="text" placeholder="PROMO CODE" value={promoInput} onChange={e => setPromoInput(e.target.value)} className="flex-1 px-5 py-3 rounded-2xl bg-gray-50 text-[10px] font-black uppercase" />
-                           <button onClick={handleApplyPromo} className="bg-gray-900 text-white px-6 py-3 rounded-2xl font-black text-[10px] uppercase">Apply</button>
+                           <input type="text" placeholder="折扣碼" value={promoInput} onChange={e => setPromoInput(e.target.value)} className="flex-1 px-5 py-3 rounded-2xl bg-gray-50 text-[10px] font-black uppercase" />
+                           <button onClick={handleApplyPromo} className="bg-gray-900 text-white px-6 py-3 rounded-2xl font-black text-[10px] uppercase">套用</button>
                         </div>
                         {appliedPromo && <div className="mt-2 text-[10px] font-black text-green-600 px-2">✅ 已套用：{appliedPromo.name}</div>}
                       </div>
@@ -568,13 +582,13 @@
                 
                 <div className="p-8 bg-gray-50/50 border-t border-gray-50 rounded-b-[3rem]">
                   <div className="space-y-2 mb-8 text-[11px] font-black text-gray-400 uppercase tracking-widest">
-                    <div className="flex justify-between"><span>Subtotal</span><span className="text-gray-900">NT$ {cartSubtotal}</span></div>
-                    {promoDiscountAmount > 0 && <div className="flex justify-between text-pink-500"><span>Discount</span><span>- NT$ {promoDiscountAmount}</span></div>}
-                    <div className="flex justify-between"><span>Shipping</span><span className="text-gray-900">{isFreeShipping ? 'FREE' : `NT$ ${currentShippingFee}`}</span></div>
-                    <div className="flex justify-between items-center pt-4 border-t border-gray-100 mt-2"><span className="text-gray-900 text-sm font-black">Total Amount</span><span className="text-3xl font-black text-pink-600 tracking-tighter">NT$ {finalTotal}</span></div>
+                    <div className="flex justify-between"><span>商品小計</span><span className="text-gray-900">NT$ {cartSubtotal}</span></div>
+                    {promoDiscountAmount > 0 && <div className="flex justify-between text-pink-500"><span>折扣</span><span>- NT$ {promoDiscountAmount}</span></div>}
+                    <div className="flex justify-between"><span>運費</span><span className="text-gray-900">{isFreeShipping ? '免運' : `NT$ ${currentShippingFee}`}</span></div>
+                    <div className="flex justify-between items-center pt-4 border-t border-gray-100 mt-2"><span className="text-gray-900 text-sm font-black">總金額</span><span className="text-3xl font-black text-pink-600 tracking-tighter">NT$ {finalTotal}</span></div>
                   </div>
                   <button disabled={cart.length === 0 || isCheckingOut} onClick={handleCheckout} className="w-full bg-gray-900 text-white py-5 rounded-3xl font-black text-sm hover:bg-pink-600 disabled:opacity-50 shadow-2xl transition-all tracking-[0.3em] uppercase">
-                    {isCheckingOut ? 'Processing...' : 'Checkout 💳'}
+                    {isCheckingOut ? '處理中...' : '結帳 💳'}
                   </button>
                 </div>
               </div>
@@ -596,7 +610,7 @@
                       <ul className="list-decimal ml-5 space-y-3 text-gray-600">
                         <li>拿出一捲<span className="text-pink-600">軟尺</span>，平貼於指甲表面「最寬處」的弧度。</li>
                         <li>測量雙手十隻指頭（慣用手通常較大），記錄下各指公釐(mm)數值。</li>
-                        <li><span className="text-pink-600">💡 建議選大不選小：</span>若數值介於中間，建議選大一號，稍微大一點可以用內附銼條磨合，太小會造成甲面壓迫。</li>
+                        <li><span className="text-pink-600">💡 建議依照實際測量直接選擇對應尺寸：</span>若甲片太緊可能會壓肉；太大可使用銼條適度修整，避免因硬度高而造成不適。</li>
                       </ul>
                    </div>
 
