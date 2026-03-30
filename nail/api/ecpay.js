@@ -77,9 +77,11 @@ module.exports = async (req, res) => {
     await db.collection('artifacts').doc(appId).collection('users').doc(adminUserId).collection('orders').doc(MerchantTradeNo).set({
       id: MerchantTradeNo,
       customerInfo: {
-        name: body.name || '未提供',
-        phone: body.phone || '未提供',
-        address: body.address || '未提供'
+        name: body.customerInfo?.name || body.name || '未提供',
+        phone: body.customerInfo?.phone || body.phone || '未提供',
+        address: body.customerInfo?.address || body.address || '未提供',
+        storeName: body.customerInfo?.storeName || '',
+        storeAddress: body.customerInfo?.storeAddress || ''
       },
       items: orderItems,
       totalAmount: finalTotal, // 這是後端算好的正確總額 (商品+運費)
@@ -115,6 +117,12 @@ module.exports = async (req, res) => {
       ReturnURL: ReturnURL,
       TotalAmount: finalTotal.toString(), // 🛡️ 傳送包含運費的正確數字
       TradeDesc: '指尖造藝官網訂單',
+      SenderName: body.customerInfo?.name || body.name || '未提供',
+      SenderPhone: body.customerInfo?.phone || body.phone || '0000000000',
+      ReceiverName: body.customerInfo?.name || body.name || '未提供',
+      ReceiverPhone: body.customerInfo?.phone || body.phone || '0000000000',
+      ReceiverAddress: body.customerInfo?.address || body.address || '',
+      Remark: `門市: ${body.customerInfo?.storeName || ''} / ${body.customerInfo?.storeAddress || ''}`
     };
 
     // 簽章邏輯
