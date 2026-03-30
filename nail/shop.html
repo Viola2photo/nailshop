@@ -2,7 +2,8 @@
 <html lang="zh-TW">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <!-- 💡 移除 user-scalable=no，讓手機用戶可以自由雙指縮放網頁 -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>指尖造藝 - 專屬穿戴甲</title>
   
   <!-- Tailwind & React & Babel -->
@@ -58,56 +59,55 @@
       'VIP9': { type: 'percent', value: 0.9, name: 'VIP 專屬 9 折' },
       'SAVE100': { type: 'minus', value: 100, name: '滿額現折 100 元' },
       'NEWOPEN': { type: 'percent', value: 0.85, name: '歡慶開幕 85 折' },
-      'KOL_VIOLA': { type: 'percent', value: 0.95, name: 'Viola 粉絲專屬 95 折' } // 網紅折扣碼範例
+      'KOL_VIOLA': { type: 'percent', value: 0.95, name: 'Viola 粉絲專屬 95 折' } 
     };
 
     const NAIL_SHAPES = ['全部', '短橢圓', '中橢圓', '長橢圓', '細狗尖', '杏仁甲', '短圓', '新中方', '短梯', '中梯', '長梯', '超長梯', '長水滴'];
 
     const { useState, useEffect, useMemo } = React;
 
-    // --- 商品卡片元件 (每 0.5 秒自動輪播，點擊整張卡片開啟詳細頁) ---
+    // --- 💡 修正版商品卡片元件 (預載入所有圖片，解決手機網速慢導致的閃爍與不輪播) ---
     const ProductCard = ({ product, onClick }) => {
       const [mediaIndex, setMediaIndex] = useState(0);
 
       useEffect(() => {
         let interval;
-        // 只要有多張圖片，每 0.5 秒自動輪換
         if (product.media && product.media.length > 1) {
           interval = setInterval(() => {
             setMediaIndex(prev => (prev + 1) % product.media.length);
-          }, 500);
+          }, 500); // 0.5 秒切換
         }
         return () => clearInterval(interval);
       }, [product.media]);
 
-      const currentMedia = product.media?.[mediaIndex];
-
       return (
         <div 
           onClick={() => onClick(product)}
-          className="group bg-white p-3 rounded-3xl shadow-sm hover:shadow-xl transition-all duration-300 border border-gray-50 flex flex-col h-full animate-fade-in-up cursor-pointer"
+          className="group bg-white p-3 md:p-4 rounded-[2rem] shadow-sm hover:shadow-2xl transition-all duration-300 border border-gray-100 flex flex-col h-full animate-fade-in-up cursor-pointer overflow-hidden relative"
         >
           <div className="aspect-[4/5] rounded-2xl overflow-hidden bg-gray-50 mb-4 relative flex-shrink-0">
-            {currentMedia ? (
-              currentMedia.type === 'video' ? (
-                 <video src={currentMedia.url} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" autoPlay muted loop playsInline />
-              ) : (
-                 <img src={currentMedia.url} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
-              )
+            {product.media && product.media.length > 0 ? (
+              product.media.map((m, idx) => (
+                m.type === 'video' ? (
+                   <video key={idx} src={m.url} className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-300 group-hover:scale-105 ${mediaIndex === idx ? 'opacity-100 z-10' : 'opacity-0 z-0'}`} autoPlay muted loop playsInline />
+                ) : (
+                   <img key={idx} src={m.url} className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-300 group-hover:scale-105 ${mediaIndex === idx ? 'opacity-100 z-10' : 'opacity-0 z-0'}`} loading="lazy" />
+                )
+              ))
             ) : (
-               <div className="w-full h-full flex items-center justify-center text-gray-300">無圖片</div>
+               <div className="absolute inset-0 flex items-center justify-center text-gray-300 font-bold">無圖片</div>
             )}
-            {product.shape && <span className="absolute top-3 left-3 bg-white/95 backdrop-blur-sm text-xs font-bold px-2 py-1 rounded-lg shadow-sm text-pink-600">{product.shape}</span>}
             
-            {/* 提示點擊查看的小標籤 */}
-            <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity duration-300">
-               <span className="bg-white/90 text-gray-900 text-sm font-bold px-4 py-2 rounded-full shadow-lg">查看詳情 🔍</span>
+            {product.shape && <span className="absolute top-3 left-3 z-20 bg-white/95 backdrop-blur-sm text-xs font-bold px-3 py-1.5 rounded-full shadow-sm text-pink-600">{product.shape}</span>}
+            
+            <div className="absolute inset-0 z-30 bg-black/10 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity duration-300">
+               <span className="bg-white text-gray-900 text-sm font-bold px-5 py-2.5 rounded-full shadow-xl transform translate-y-2 group-hover:translate-y-0 transition-all">查看詳情 🔍</span>
             </div>
           </div>
           
-          <div className="px-1 flex-1 flex flex-col text-center">
-            <h3 className="font-black text-gray-900 text-lg mb-1 truncate">{product.name}</h3>
-            <p className="text-pink-600 font-bold text-base mt-auto">NT$ {product.price}</p>
+          <div className="px-2 flex-1 flex flex-col text-center pb-2">
+            <h3 className="font-black text-gray-900 text-lg md:text-xl mb-1 truncate tracking-wide">{product.name}</h3>
+            <p className="text-pink-600 font-black text-base md:text-lg mt-auto">NT$ {product.price}</p>
           </div>
         </div>
       );
@@ -129,6 +129,9 @@
       const [modalSize, setModalSize] = useState('');
       const [modalQty, setModalQty] = useState(1);
       
+      // 💡 全螢幕放大圖片狀態
+      const [fullScreenImage, setFullScreenImage] = useState(null);
+
       const [user, setUser] = useState(null);
       const [viewMode, setViewMode] = useState('shop'); 
       const [userOrders, setUserOrders] = useState([]);
@@ -216,12 +219,8 @@
         setModalQty(1);
       };
 
-      // 將選擇的商品加入購物車
       const handleAddToCart = () => {
-        if (!modalSize) {
-          alert('請先選擇尺寸哦！');
-          return;
-        }
+        if (!modalSize) { alert('請先選擇尺寸哦！'); return; }
         setCart(prev => {
           const existing = prev.find(item => item.id === selectedProduct.id && item.size === modalSize);
           if (existing) {
@@ -229,18 +228,15 @@
           }
           return [...prev, { ...selectedProduct, size: modalSize, quantity: modalQty }];
         });
-        setSelectedProduct(null); // 關閉 Modal
-        setIsCartOpen(true);      // 打開購物車
+        setSelectedProduct(null); 
+        setIsCartOpen(true);      
       };
 
       const removeFromCart = (index) => setCart(prev => prev.filter((_, i) => i !== index));
 
-      // 價格計算邏輯 (取消了 4件1000 的邏輯，保持最乾淨的總價計算)
       const cartSubtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-      
       const currentShippingFee = (cartSubtotal === 0 || cartSubtotal >= FREE_SHIPPING_THRESHOLD) ? 0 : SHIPPING_FEE;
       const isFreeShipping = currentShippingFee === 0 && cartSubtotal > 0;
-      
       let promoDiscountAmount = 0;
 
       if (appliedPromo && cartSubtotal > 0) {
@@ -277,7 +273,7 @@
                 items: cart,
                 totalAmount: finalTotal,
                 customerInfo: { name: customerName, phone: customerPhone, address: shippingAddress },
-                promoCode: appliedPromo ? appliedPromo.code : null, // 紀錄使用的優惠碼供網紅分潤核對
+                promoCode: appliedPromo ? appliedPromo.code : null,
                 status: 'pending',
                 createdAt: new Date().toISOString()
              });
@@ -310,10 +306,8 @@
              聯絡我們 : viola.lomography@gmail.com
           </div>
 
-          {/* Header */}
           <header className="bg-white/95 backdrop-blur-md sticky top-0 z-40 border-b border-gray-100 shadow-sm">
             <div className="max-w-6xl mx-auto px-4 md:px-5 py-3 md:py-4 flex justify-between items-center">
-              
               <div className="flex items-center gap-3 cursor-pointer" onClick={() => setViewMode('shop')}>
                 <img 
                   src="freepik__logo__19488.png" 
@@ -326,7 +320,7 @@
 
               <div className="flex items-center gap-2 md:gap-4">
                 <button onClick={() => setIsGuideOpen(true)} className="text-xs md:text-sm font-bold text-gray-500 hover:text-pink-500 bg-gray-50 px-3 py-2 rounded-full shadow-sm border border-gray-100 transition">
-                  📏 尺寸測量
+                  📏 教學
                 </button>
 
                 {user ? (
@@ -358,7 +352,6 @@
             </div>
           </header>
 
-          {/* 吸頂分類 */}
           {viewMode === 'shop' && (
             <div className="sticky top-[60px] md:top-[76px] z-30 bg-white/95 backdrop-blur-md shadow-sm border-b border-gray-100 py-3 px-4">
               <div className="max-w-6xl mx-auto overflow-x-auto hide-scrollbar">
@@ -400,7 +393,8 @@
                  </div>
               ) : (
                 <>
-                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-8">
+                  {/* 💡 修正網格：手機版 (sm 以下) 強制 1 欄呈現大圖，提升視覺衝擊！ */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 md:gap-8">
                     {filteredProducts.slice(0, visibleCount).map(product => (
                       <ProductCard key={product.id} product={product} onClick={openProductModal} />
                     ))}
@@ -478,80 +472,90 @@
 
           {/* 🌟 商品放大預覽 (Quick View Modal) 🌟 */}
           {selectedProduct && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-              <div className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onClick={() => setSelectedProduct(null)}></div>
-              <div className="bg-white rounded-[2rem] w-full max-w-4xl max-h-[90vh] overflow-y-auto relative z-10 shadow-2xl flex flex-col md:flex-row animate-fade-in-up">
+            <div className="fixed inset-0 z-40 flex items-center justify-center p-4">
+              <div className="absolute inset-0 bg-black/70 backdrop-blur-sm transition-opacity" onClick={() => setSelectedProduct(null)}></div>
+              <div className="bg-white rounded-[2rem] w-full max-w-4xl max-h-[90vh] overflow-y-auto relative z-50 shadow-2xl flex flex-col md:flex-row animate-fade-in-up">
                 
-                <button onClick={() => setSelectedProduct(null)} className="absolute top-4 right-4 w-10 h-10 flex items-center justify-center bg-gray-100 hover:bg-gray-200 rounded-full font-bold text-gray-600 transition-colors z-20">✕</button>
+                <button onClick={() => setSelectedProduct(null)} className="absolute top-4 right-4 w-10 h-10 flex items-center justify-center bg-gray-100 hover:bg-gray-200 rounded-full font-bold text-gray-600 transition-colors z-20 shadow-sm">✕</button>
                 
-                {/* 左側：大圖片展示 (橫向捲動) */}
-                <div className="md:w-1/2 bg-gray-50 flex overflow-x-auto snap-x snap-mandatory hide-scrollbar">
+                {/* 💡 左側大圖：加入放大鏡圖示與點擊事件 */}
+                <div className="md:w-1/2 bg-gray-900 flex overflow-x-auto snap-x snap-mandatory hide-scrollbar relative">
                   {selectedProduct.media?.map((m, idx) => (
-                    <div key={idx} className="w-full flex-shrink-0 snap-center aspect-[4/5] md:aspect-auto flex items-center justify-center">
+                    <div key={idx} className="w-full flex-shrink-0 snap-center aspect-[4/5] md:aspect-auto flex items-center justify-center relative group">
                        {m.type === 'video' ? 
-                         <video src={m.url} className="w-full h-full object-cover" autoPlay muted loop playsInline /> :
-                         <img src={m.url} className="w-full h-full object-cover" />
+                         <video src={m.url} className="w-full h-full object-cover opacity-90" autoPlay muted loop playsInline /> :
+                         <img 
+                           src={m.url} 
+                           onClick={() => setFullScreenImage(m.url)} 
+                           className="w-full h-full object-cover cursor-zoom-in transition-transform duration-500 hover:scale-105 opacity-95 hover:opacity-100" 
+                           title="點擊放大圖片"
+                         />
                        }
+                       {/* 手機板也會明顯看到的放大提示 */}
+                       {m.type !== 'video' && (
+                         <button 
+                           onClick={() => setFullScreenImage(m.url)} 
+                           className="absolute bottom-6 right-6 bg-black/60 text-white font-bold px-4 py-2 text-sm rounded-full backdrop-blur-md shadow-lg flex items-center gap-2 hover:bg-pink-500 transition-colors"
+                         >
+                           🔍 點擊放大
+                         </button>
+                       )}
                     </div>
                   ))}
                   {(!selectedProduct.media || selectedProduct.media.length === 0) && (
-                     <div className="w-full aspect-[4/5] flex items-center justify-center text-gray-300">無圖片</div>
+                     <div className="w-full aspect-[4/5] flex items-center justify-center text-gray-500">無圖片</div>
                   )}
                 </div>
 
-                {/* 右側：詳細資訊與購買選項 */}
                 <div className="md:w-1/2 p-6 md:p-10 flex flex-col">
-                  {selectedProduct.shape && <span className="inline-block bg-pink-50 text-pink-600 text-xs font-bold px-3 py-1 rounded-full mb-3 w-max">{selectedProduct.shape}</span>}
+                  {selectedProduct.shape && <span className="inline-block bg-pink-50 text-pink-600 text-xs font-bold px-4 py-1.5 rounded-full mb-3 w-max">{selectedProduct.shape}</span>}
                   
-                  <h2 className="text-2xl md:text-3xl font-black text-gray-900 mb-2">{selectedProduct.name}</h2>
-                  <p className="text-2xl font-bold text-pink-600 mb-6">NT$ {selectedProduct.price}</p>
+                  <h2 className="text-2xl md:text-3xl font-black text-gray-900 mb-2 leading-tight">{selectedProduct.name}</h2>
+                  <p className="text-3xl font-black text-pink-600 mb-6">NT$ {selectedProduct.price}</p>
                   
                   {selectedProduct.description && (
-                    <div className="mb-6 bg-gray-50 p-4 rounded-2xl text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">
+                    <div className="mb-6 bg-gray-50 p-5 rounded-2xl text-sm text-gray-600 leading-relaxed whitespace-pre-wrap border border-gray-100">
                       {selectedProduct.description}
                     </div>
                   )}
 
                   <div className="mb-6">
                     <div className="flex justify-between items-end mb-3">
-                      <h3 className="font-bold text-gray-900">選擇尺寸</h3>
-                      <button onClick={() => {setSelectedProduct(null); setIsGuideOpen(true);}} className="text-xs text-pink-500 hover:underline font-bold">📏 不知道尺寸嗎？</button>
+                      <h3 className="font-bold text-gray-900 text-lg">選擇尺寸</h3>
+                      <button onClick={() => {setSelectedProduct(null); setIsGuideOpen(true);}} className="text-xs text-pink-500 hover:underline font-bold bg-pink-50 px-3 py-1 rounded-lg">📏 不知道尺寸嗎？</button>
                     </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                       {['XS', 'S', 'M', 'L'].map(size => {
                         const inStock = selectedProduct.stock[size] > 0;
                         return (
                           <button 
                             key={size} disabled={!inStock} onClick={() => setModalSize(size)}
                             className={`py-3 rounded-xl border-2 flex flex-col items-center justify-center transition-all ${
-                              modalSize === size ? 'border-pink-500 bg-pink-50' : 
-                              inStock ? 'border-gray-100 hover:border-pink-300 hover:bg-gray-50' : 'border-gray-50 bg-gray-50 opacity-50 cursor-not-allowed'
+                              modalSize === size ? 'border-pink-500 bg-pink-50 shadow-sm transform scale-105' : 
+                              inStock ? 'border-gray-100 hover:border-pink-300 hover:bg-gray-50' : 'border-gray-50 bg-gray-50 opacity-40 cursor-not-allowed'
                             }`}
                           >
-                            <span className={`font-black ${modalSize === size ? 'text-pink-600' : 'text-gray-700'}`}>{size}</span>
-                            {!inStock && <span className="text-[10px] text-red-400 mt-1 block">缺貨</span>}
-                            {/* 特別標註 S 號 */}
-                            {inStock && size === 'S' && <span className="text-[9px] text-pink-500 mt-0.5 whitespace-nowrap hidden sm:block">約70-80%適用</span>}
+                            <span className={`font-black text-lg ${modalSize === size ? 'text-pink-600' : 'text-gray-700'}`}>{size}</span>
+                            {!inStock && <span className="text-[10px] text-red-400 mt-1 block font-bold">已售完</span>}
+                            {inStock && size === 'S' && <span className="text-[9px] text-pink-500 mt-0.5 whitespace-nowrap font-bold">約70-80%適用</span>}
                           </button>
                         );
                       })}
                     </div>
-                    {/* 手機版 S 號的補充說明 */}
-                    <div className="sm:hidden text-xs text-pink-500 mt-2 font-bold text-center">💡 S號約適合 70% ~ 80% 的女孩唷！</div>
                   </div>
 
-                  <div className="mb-8 flex items-center gap-4">
-                    <span className="font-bold text-gray-900">數量</span>
-                    <div className="flex items-center bg-gray-50 rounded-full border border-gray-200 p-1">
-                      <button onClick={() => setModalQty(Math.max(1, modalQty - 1))} className="w-8 h-8 flex items-center justify-center font-bold text-gray-600 hover:bg-gray-200 rounded-full transition">-</button>
-                      <span className="w-10 text-center font-bold">{modalQty}</span>
-                      <button onClick={() => setModalQty(modalQty + 1)} className="w-8 h-8 flex items-center justify-center font-bold text-gray-600 hover:bg-gray-200 rounded-full transition">+</button>
+                  <div className="mb-8 flex items-center gap-4 bg-gray-50 p-3 rounded-2xl border border-gray-100">
+                    <span className="font-bold text-gray-900 ml-2">購買數量</span>
+                    <div className="flex items-center bg-white rounded-xl shadow-sm border border-gray-100 p-1 ml-auto">
+                      <button onClick={() => setModalQty(Math.max(1, modalQty - 1))} className="w-10 h-10 flex items-center justify-center font-bold text-gray-600 hover:bg-pink-50 hover:text-pink-600 rounded-lg transition">-</button>
+                      <span className="w-12 text-center font-black text-lg">{modalQty}</span>
+                      <button onClick={() => setModalQty(modalQty + 1)} className="w-10 h-10 flex items-center justify-center font-bold text-gray-600 hover:bg-pink-50 hover:text-pink-600 rounded-lg transition">+</button>
                     </div>
                   </div>
 
                   <button 
                     onClick={handleAddToCart}
-                    className="mt-auto w-full bg-gray-900 text-white py-4 rounded-2xl font-black text-lg hover:bg-pink-600 transition-all shadow-xl active:scale-[0.98]"
+                    className="mt-auto w-full bg-gray-900 text-white py-4 rounded-2xl font-black text-lg hover:bg-pink-600 transition-all shadow-xl active:scale-[0.98] flex items-center justify-center gap-2"
                   >
                     加入購物車 🛒
                   </button>
@@ -560,7 +564,29 @@
             </div>
           )}
 
-          {/* 📏 教學 Modal (補回尺寸測量教學) */}
+          {/* 🔍 全螢幕圖片放大視窗 (Lightbox) */}
+          {fullScreenImage && (
+            <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black/95 backdrop-blur-md animate-fade-in-up" onClick={() => setFullScreenImage(null)}>
+              <button 
+                onClick={() => setFullScreenImage(null)} 
+                className="absolute top-6 right-6 w-12 h-12 flex items-center justify-center bg-white/20 hover:bg-white/40 text-white rounded-full transition-colors z-[110] text-xl font-bold shadow-lg"
+              >
+                ✕
+              </button>
+              <div className="w-full h-full overflow-auto flex items-center justify-center p-2">
+                <img 
+                  src={fullScreenImage} 
+                  className="max-w-full max-h-[90vh] object-contain shadow-2xl transition-transform" 
+                  onClick={(e) => e.stopPropagation()} 
+                />
+              </div>
+              <div className="absolute bottom-10 text-white/70 text-sm font-bold tracking-widest pointer-events-none bg-black/50 px-6 py-2 rounded-full backdrop-blur-md">
+                ✨ 可雙指縮放畫面 / 點擊背景關閉 ✨
+              </div>
+            </div>
+          )}
+
+          {/* 📏 教學 Modal */}
           {isGuideOpen && (
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
               <div className="absolute inset-0 bg-black/50 backdrop-blur-sm transition-opacity" onClick={() => setIsGuideOpen(false)}></div>
@@ -604,7 +630,6 @@
                 <h2 className="text-2xl font-black mb-6 text-gray-900 border-b-2 border-pink-100 pb-4">✨ 如何完美配戴與卸除？</h2>
                 <div className="space-y-6 text-gray-700 leading-relaxed mb-10">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {/* 配戴步驟 */}
                     <div className="bg-white border border-gray-100 p-6 rounded-2xl shadow-sm hover:shadow-md transition">
                       <h3 className="font-bold text-lg mb-4 text-pink-600 flex items-center gap-2"><span>💅</span> 輕鬆配戴 4 步驟</h3>
                       <ol className="space-y-4 text-sm font-bold">
@@ -615,7 +640,6 @@
                       </ol>
                     </div>
                     
-                    {/* 卸除步驟 */}
                     <div className="bg-white border border-gray-100 p-6 rounded-2xl shadow-sm hover:shadow-md transition">
                       <h3 className="font-bold text-lg mb-4 text-gray-600 flex items-center gap-2"><span>🛁</span> 無痛卸除方式</h3>
                       <ul className="space-y-4 text-sm font-bold">
