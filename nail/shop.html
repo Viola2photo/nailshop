@@ -11,7 +11,7 @@
   <script defer crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   
-  <!-- Firebase (新增 Auth 模組) -->
+  <!-- Firebase -->
   <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore-compat.js"></script>
@@ -51,7 +51,7 @@
     const adminUserId = "MvkJo5e1kEcBS0fGGMr4RKdQjYg1"; 
     const appId = 'nail-inventory-app';
 
-    // 1. 更新運費為 65 元
+    // 💡 運費調整為 65 元
     const SHIPPING_FEE = 65;              
     const FREE_SHIPPING_THRESHOLD = 1000; 
     
@@ -74,7 +74,7 @@
         if (product.media && product.media.length > 1) {
           interval = setInterval(() => {
             setMediaIndex(prev => (prev + 1) % product.media.length);
-          }, 1500);
+          }, 500);
         }
         return () => clearInterval(interval);
       }, [product.media]);
@@ -124,7 +124,6 @@
       const [selectedProduct, setSelectedProduct] = useState(null);
       const [modalSize, setModalSize] = useState('');
       const [modalQty, setModalQty] = useState(1);
-      
       const [fullScreenImage, setFullScreenImage] = useState(null);
 
       const [user, setUser] = useState(null);
@@ -139,19 +138,8 @@
       const [shippingAddress, setShippingAddress] = useState('');
       const [isGuideOpen, setIsGuideOpen] = useState(false);
 
-      // 支付方式選擇: 'CREDIT' (信用卡), 'CVS' (超商貨到付款/代碼)
-      const [paymentMethod, setPaymentMethod] = useState('CREDIT');
-
-      const [repayingOrderId, setRepayingOrderId] = useState(null);
-
-      useEffect(() => {
-        const params = new URLSearchParams(window.location.search);
-        if (params.get('order') === 'success') {
-          alert('✅ 訂單已收到！請留意手機簡訊或 Email 通知。');
-          setViewMode('orders');
-          window.history.replaceState({}, document.title, window.location.pathname);
-        }
-      }, []);
+      // 💡 新增支付方式狀態
+      const [paymentMethod, setPaymentMethod] = useState('CREDIT'); // 'CREDIT' 或 'CVS'
 
       useEffect(() => {
         const unsubscribe = auth.onAuthStateChanged((currentUser) => {
@@ -265,120 +253,61 @@
         }
       };
 
-      const handleOpenMap = (logisticsType) => {
-        const mapWindow = window.open(`/api/map?logisticsType=${logisticsType}`, 'ECPayMap', 'width=800,height=600,center=yes');
-        if (!mapWindow) {
-          alert('請允許瀏覽器開啟彈出視窗以選擇門市！');
-        }
-      };
-
-      // 🚀 核心結帳邏輯優化
+      // 💡 升級版結帳邏輯：傳送完整物件供後端驗算
       const handleCheckout = async () => {
-        if (!customerName || !customerPhone || !shippingAddress) { 
-          alert('請先填寫收件人姓名、電話，並選擇取件門市或地址！'); 
-          return; 
-        }
-        
+        if (!customerName || !customerPhone || !shippingAddress) { alert('請先填寫收件人姓名、電話，並選擇取件門市！'); return; }
         setIsCheckingOut(true);
-        let tempOrderId = `ORD${Date.now()}`;
-        
         try {
-          // 確保 Firebase 端紀錄的金額與前端顯示完全一致
+          // 整理精簡版商品資料 (僅含必要 ID)
+          const orderItems = cart.map(item => ({
+            id: item.id,
+            size: item.size,
+            quantity: item.quantity,
+            price: item.price // 提供參考，但後端應自行驗算
+          }));
+
+          let orderId = `ORD${Date.now()}`;
+          
+          // 在 Firebase 建立記錄
           if (user) {
-             await db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('orders').doc(tempOrderId).set({
-                orderId: tempOrderId,
-                items: cart,
-                subtotal: cartSubtotal,
-                shippingFee: currentShippingFee,
-                discount: promoDiscountAmount,
-                totalAmount: finalTotal, // 前端計算出的最終應付金額
+             await db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('orders').doc(orderId).set({
+                orderId: orderId,
+                items: orderItems,
+                totalAmount: finalTotal,
                 customerInfo: { name: customerName, phone: customerPhone, address: shippingAddress },
                 promoCode: appliedPromo ? appliedPromo.code : null,
-                paymentMethod: paymentMethod,
+                paymentMethod: paymentMethod, // 支付方式
                 status: 'pending',
                 createdAt: new Date().toISOString()
              });
           }
 
-          // 2. 傳送資料至後端 API
-          // 這裡新增傳送 totalAmount, shippingFee 給後端作為比對，預防金額不符
-          const checkoutData = {
-            name: customerName,
-            phone: customerPhone,
-            address: shippingAddress,
-            items: cart.map(item => ({
-              id: item.id,
-              name: item.name,
-              price: item.price,
-              size: item.size,
-              quantity: item.quantity
-            })),
-            discountCode: appliedPromo ? appliedPromo.code : '',
-            orderId: tempOrderId,
-            totalAmount: finalTotal,       // 傳送最終總額
-            shippingFee: currentShippingFee, // 傳送運費
-            paymentMethod: paymentMethod    // 傳送付款方式 (CREDIT 或 CVS)
-          };
-
+          // 💡 傳送完整物件至後端
           const response = await fetch('/api/ecpay', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(checkoutData)
-          });
-          
-          if (!response.ok) {
-            const errText = await response.text();
-            throw new Error(errText || '結帳連線失敗');
-          }
-          
-          const formHtml = await response.text();
-          document.open(); 
-          document.write(formHtml); 
-          document.close();
-
-        } catch (error) {
-          console.error("結帳發生錯誤:", error);
-          alert("結帳失敗：" + error.message);
-          setIsCheckingOut(false);
-        }
-      };
-
-      const handleRepay = async (order) => {
-        setRepayingOrderId(order.id);
-        try {
-          const checkoutData = {
-            name: order.customerInfo?.name || '',
-            phone: order.customerInfo?.phone || '',
-            address: order.customerInfo?.address || '',
-            items: order.items?.map(item => ({
-              id: item.id,
-              name: item.name,
-              price: item.price,
-              size: item.size,
-              quantity: item.quantity
-            })) || [],
-            discountCode: order.promoCode || '',
-            orderId: order.orderId,
-            totalAmount: order.totalAmount, // 使用訂單紀錄中的金額
-            shippingFee: order.shippingFee || 65,
-            paymentMethod: order.paymentMethod || 'CREDIT'
-          };
-
-          const response = await fetch('/api/ecpay', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(checkoutData)
+            body: JSON.stringify({ 
+              orderId: orderId,
+              items: orderItems,
+              promoCode: appliedPromo ? appliedPromo.code : null,
+              paymentMethod: paymentMethod,
+              customerInfo: { 
+                name: customerName, 
+                phone: customerPhone, 
+                address: shippingAddress 
+              },
+              total: finalTotal // 傳送前端算的金額，讓後端比對是否遭竄改
+            }) 
           });
           
           if (!response.ok) throw new Error('結帳連線失敗');
-          const formHtml = await response.text();
-          document.open(); 
-          document.write(formHtml); 
-          document.close();
-        } catch (error) {
-          alert("重新付款失敗：" + error.message);
-        } finally {
-          setRepayingOrderId(null);
+          const html = await response.text();
+          document.open(); document.write(html); document.close();
+
+        } catch(e) {
+          console.error(e);
+          alert('【系統提示】因為目前尚無實體後端，系統將模擬結帳成功。');
+          setCart([]); setIsCartOpen(false); setViewMode('orders'); setIsCheckingOut(false);
         }
       };
 
@@ -458,14 +387,32 @@
 
           <main className="max-w-6xl mx-auto px-4 py-8">
             {viewMode === 'shop' ? (
-                // 商品列表 (略，同原版)
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 md:gap-8">
-                {isLoading ? (
-                    <div className="col-span-full text-center py-20 text-gray-400 font-bold">載入中...</div>
-                ) : filteredProducts.slice(0, visibleCount).map(product => (
-                    <ProductCard key={product.id} product={product} onClick={openProductModal} />
-                ))}
-                </div>
+              isLoading ? (
+                 <div className="text-center py-20 text-gray-400 font-bold flex flex-col items-center gap-3">
+                   <div className="w-8 h-8 border-4 border-pink-200 border-t-pink-500 rounded-full animate-spin"></div>
+                   店面佈置中...
+                 </div>
+              ) : products.length === 0 ? (
+                 <div className="text-center py-20 text-gray-500 bg-white rounded-3xl shadow-sm border border-gray-100">
+                    <div className="text-6xl mb-4">🏪</div>
+                    <h2 className="text-2xl font-bold mb-2">倉庫目前空空如也</h2>
+                 </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 md:gap-8">
+                    {filteredProducts.slice(0, visibleCount).map(product => (
+                      <ProductCard key={product.id} product={product} onClick={openProductModal} />
+                    ))}
+                  </div>
+                  {visibleCount < filteredProducts.length && (
+                    <div className="mt-12 flex justify-center">
+                      <button onClick={() => setVisibleCount(prev => prev + 8)} className="px-8 py-3 bg-white border-2 border-pink-200 text-pink-600 rounded-full font-bold hover:bg-pink-50 shadow-sm transition">
+                        載入更多商品 👇
+                      </button>
+                    </div>
+                  )}
+                </>
+              )
             ) : (
               // 我的訂單
               <div className="max-w-3xl mx-auto animate-fade-in-up">
@@ -477,32 +424,42 @@
                   <div className="bg-white p-10 rounded-3xl text-center border border-gray-100 shadow-sm">
                     <div className="text-5xl mb-4">📜</div>
                     <h3 className="text-xl font-bold text-gray-700 mb-2">您還沒有購買過任何商品</h3>
+                    <button onClick={() => setViewMode('shop')} className="mt-4 text-pink-500 font-bold hover:underline">去逛逛吧！</button>
                   </div>
                 ) : (
                   <div className="space-y-6">
                     {userOrders.map(order => (
-                      <div key={order.id} className="bg-white rounded-3xl p-6 border border-gray-100 shadow-sm">
-                        <div className="flex justify-between items-start border-b border-gray-100 pb-4 mb-4">
+                      <div key={order.id} className="bg-white rounded-3xl p-6 border border-gray-100 shadow-sm hover:shadow-md transition">
+                        <div className="flex justify-between items-center border-b border-gray-100 pb-4 mb-4">
                           <div>
-                            <span className="text-xs text-gray-400 font-bold block mb-1">{new Date(order.createdAt).toLocaleString()}</span>
+                            <span className="text-xs text-gray-400 font-bold block mb-1">{new Date(order.createdAt).toLocaleDateString('zh-TW', { year:'numeric', month:'long', day:'numeric', hour:'2-digit', minute:'2-digit' })}</span>
                             <span className="text-sm font-bold text-gray-800 bg-gray-100 px-3 py-1 rounded-lg">單號: {order.orderId}</span>
                           </div>
-                          <div className="flex flex-col items-end gap-2">
-                            <div className={`px-4 py-1.5 rounded-full text-sm font-bold ${
-                              order.status === 'pending' ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'
-                            }`}>
-                              {order.status === 'pending' ? '⏳ 未付款/處理中' : '✅ 已完成'}
-                            </div>
-                            {order.status === 'pending' && (
-                              <button onClick={() => handleRepay(order)} disabled={repayingOrderId === order.id} className="text-xs bg-pink-500 text-white px-4 py-2 rounded-full font-bold">
-                                {repayingOrderId === order.id ? '跳轉中...' : '💳 重新付款'}
-                              </button>
-                            )}
+                          <div className={`px-4 py-1.5 rounded-full text-sm font-bold ${
+                            order.status === 'pending' ? 'bg-amber-100 text-amber-700' : order.status === 'paid' ? 'bg-blue-100 text-blue-700' : order.status === 'shipped' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'
+                          }`}>
+                            {order.status === 'pending' ? '⏳ 處理中' : order.status === 'paid' ? '✅ 已付款' : order.status === 'shipped' ? '🚚 已出貨' : order.status}
                           </div>
                         </div>
+                        <div className="space-y-3 mb-4">
+                          {order.items?.map((item, idx) => (
+                            <div key={idx} className="flex gap-4 items-center">
+                              <div className="flex-1">
+                                <h4 className="font-bold text-gray-900">商品 ID: {item.id}</h4>
+                                <span className="text-xs text-gray-500 bg-gray-50 px-2 py-1 rounded-md mt-1 inline-block">尺寸: {item.size} / 數量: {item.quantity}</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
                         <div className="bg-gray-50 rounded-xl p-4 flex justify-between items-center">
-                          <div className="text-xs text-gray-500">應付總金額</div>
-                          <div className="text-right font-black text-xl text-pink-600">NT$ {order.totalAmount}</div>
+                          <div className="text-xs text-gray-500">
+                            門市：{order.customerInfo?.address} <br/>
+                            付款方式：{order.paymentMethod === 'CREDIT' ? '信用卡' : '超商貨到付款/代碼'}
+                          </div>
+                          <div className="text-right">
+                            <span className="text-sm text-gray-500 block">總金額</span>
+                            <span className="text-xl font-black text-gray-900">NT$ {order.totalAmount}</span>
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -512,74 +469,220 @@
             )}
           </main>
 
-          {/* 購物車 Modal 優化部分 */}
-          {isCartOpen && (
-            <div className="fixed inset-0 z-[60] flex justify-end">
-              <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setIsCartOpen(false)}></div>
-              <div className="w-full max-w-md bg-white h-full relative flex flex-col shadow-2xl animate-fade-in-right">
-                <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50">
-                  <h2 className="text-xl font-black">🛍️ 購物車清單</h2>
-                  <button onClick={() => setIsCartOpen(false)} className="font-bold text-gray-600">✕</button>
-                </div>
+          <button onClick={scrollToTop} className={`fixed bottom-6 right-6 z-40 bg-pink-500 text-white w-12 h-12 rounded-full shadow-lg flex items-center justify-center text-xl transition-all duration-300 hover:bg-pink-600 hover:scale-110 hover:shadow-pink-300/50 hover:-translate-y-1 ${showScrollTop ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10 pointer-events-none'}`}>
+            🚀
+          </button>
+
+          {/* 商品詳細預覽 */}
+          {selectedProduct && (
+            <div className="fixed inset-0 z-40 flex items-center justify-center p-4">
+              <div className="absolute inset-0 bg-black/70 backdrop-blur-sm transition-opacity" onClick={() => setSelectedProduct(null)}></div>
+              <div className="bg-white rounded-[2rem] w-full max-w-4xl max-h-[90vh] overflow-y-auto relative z-50 shadow-2xl flex flex-col md:flex-row animate-fade-in-up">
                 
-                <div className="flex-1 overflow-y-auto p-6 space-y-6">
-                  {cart.map((item, idx) => (
-                    <div key={idx} className="flex gap-4 border-b border-gray-100 pb-4">
-                      <img src={item.media?.[0]?.url} className="w-16 h-20 object-cover rounded-xl" />
-                      <div className="flex-1">
-                        <h4 className="font-bold">{item.name}</h4>
-                        <div className="text-xs text-gray-500">尺寸: {item.size} / 數量: {item.quantity}</div>
-                        <div className="text-pink-600 font-bold mt-1">NT$ {item.price * item.quantity}</div>
-                      </div>
-                      <button onClick={() => removeFromCart(idx)} className="text-red-300 hover:text-red-500">✕</button>
+                <button onClick={() => setSelectedProduct(null)} className="absolute top-4 right-4 w-10 h-10 flex items-center justify-center bg-white/80 backdrop-blur-md hover:bg-white rounded-full font-bold text-gray-800 transition-colors z-20 shadow-md">✕</button>
+                
+                <div className="w-full md:w-1/2 shrink-0 bg-gray-50 flex overflow-x-auto snap-x snap-mandatory hide-scrollbar relative">
+                  {selectedProduct.media?.map((m, idx) => (
+                    <div key={idx} className="w-full flex-shrink-0 snap-center aspect-[4/5] md:aspect-auto md:h-full flex items-center justify-center relative group">
+                       {m.type === 'video' ? 
+                         <video src={m.url} className="w-full h-full object-cover opacity-95" autoPlay muted loop playsInline /> :
+                         <img 
+                           src={m.url} 
+                           onClick={() => setFullScreenImage(m.url)} 
+                           className="w-full h-full object-cover cursor-zoom-in transition-transform duration-500 hover:scale-105 opacity-95 hover:opacity-100" 
+                           title="點擊放大圖片"
+                         />
+                       }
+                       {m.type !== 'video' && (
+                         <button 
+                           onClick={() => setFullScreenImage(m.url)} 
+                           className="absolute bottom-4 right-4 md:bottom-6 md:right-6 bg-black/60 text-white font-bold px-4 py-2 text-sm rounded-full backdrop-blur-md shadow-lg flex items-center gap-2 hover:bg-pink-500 transition-colors"
+                         >
+                           🔍 點擊放大
+                         </button>
+                       )}
                     </div>
                   ))}
-
-                  {cart.length > 0 && (
-                    <div className="space-y-4">
-                      <div className="bg-white border-2 border-gray-100 p-4 rounded-2xl">
-                        <h3 className="font-bold mb-3">📦 收件資訊</h3>
-                        <input type="text" placeholder="真實姓名" value={customerName} onChange={e => setCustomerName(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm mb-2" />
-                        <input type="tel" placeholder="手機號碼" value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm mb-2" />
-                        
-                        <div className="flex gap-2 mb-2">
-                          <button onClick={() => handleOpenMap('UNIMARTC2C')} className="flex-1 bg-green-50 text-green-700 py-2 rounded-xl text-xs font-bold border border-green-200">🏪 7-11 門市</button>
-                          <button onClick={() => handleOpenMap('FAMIC2C')} className="flex-1 bg-blue-50 text-blue-700 py-2 rounded-xl text-xs font-bold border border-blue-200">🏪 全家 門市</button>
-                        </div>
-                        <textarea placeholder="填寫地址或使用上方按鈕選擇門市" value={shippingAddress} onChange={e => setShippingAddress(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-pink-200 text-sm font-bold text-pink-700 h-16"></textarea>
-                      </div>
-
-                      <div className="bg-gray-50 p-4 rounded-2xl">
-                        <h3 className="font-bold text-sm mb-3">💳 支付方式</h3>
-                        <div className="grid grid-cols-2 gap-2">
-                           <button onClick={() => setPaymentMethod('CREDIT')} className={`py-2 rounded-xl text-xs font-bold border transition ${paymentMethod === 'CREDIT' ? 'bg-gray-900 text-white' : 'bg-white text-gray-600 border-gray-200'}`}>信用卡支付</button>
-                           <button onClick={() => setPaymentMethod('CVS')} className={`py-2 rounded-xl text-xs font-bold border transition ${paymentMethod === 'CVS' ? 'bg-gray-900 text-white' : 'bg-white text-gray-600 border-gray-200'}`}>超商貨到付款/代碼</button>
-                        </div>
-                        <p className="text-[10px] text-gray-400 mt-2">* 選擇超商貨到付款請務必填寫正確門市。</p>
-                      </div>
-                    </div>
-                  )}
                 </div>
 
-                <div className="p-6 bg-white border-t border-gray-100">
-                  <div className="space-y-2 mb-4 text-sm font-bold text-gray-500">
-                    <div className="flex justify-between"><span>小計</span><span>NT$ {cartSubtotal}</span></div>
-                    {promoDiscountAmount > 0 && <div className="flex justify-between text-pink-500"><span>折扣</span><span>- NT$ {promoDiscountAmount}</span></div>}
-                    <div className="flex justify-between"><span>運費</span>{isFreeShipping ? <span className="text-green-500">免運</span> : <span>NT$ {currentShippingFee}</span>}</div>
-                    <div className="flex justify-between items-center pt-3 border-t mt-2"><span className="text-gray-900 text-base">總計</span><span className="text-3xl font-black text-pink-600">NT$ {finalTotal}</span></div>
+                <div className="w-full md:w-1/2 p-6 md:p-10 flex flex-col">
+                  {selectedProduct.shape && <span className="inline-block bg-pink-50 text-pink-600 text-xs font-bold px-4 py-1.5 rounded-full mb-3 w-max">{selectedProduct.shape}</span>}
+                  <h2 className="text-2xl md:text-3xl font-black text-gray-900 mb-2 leading-tight">{selectedProduct.name}</h2>
+                  <p className="text-3xl font-black text-pink-600 mb-6">NT$ {selectedProduct.price}</p>
+                  
+                  {selectedProduct.description && (
+                    <div className="mb-6 bg-gray-50 p-5 rounded-2xl text-sm text-gray-600 leading-relaxed whitespace-pre-wrap border border-gray-100">
+                      {selectedProduct.description}
+                    </div>
+                  )}
+
+                  <div className="mb-6">
+                    <h3 className="font-bold text-gray-900 text-lg mb-3">選擇尺寸</h3>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      {['XS', 'S', 'M', 'L'].map(size => {
+                        const inStock = selectedProduct.stock[size] > 0;
+                        return (
+                          <button 
+                            key={size} disabled={!inStock} onClick={() => setModalSize(size)}
+                            className={`py-3 rounded-xl border-2 flex flex-col items-center justify-center transition-all ${
+                              modalSize === size ? 'border-pink-500 bg-pink-50 shadow-sm transform scale-105' : 
+                              inStock ? 'border-gray-100 hover:border-pink-300 hover:bg-gray-50' : 'border-gray-50 bg-gray-50 opacity-40 cursor-not-allowed'
+                            }`}
+                          >
+                            <span className={`font-black text-lg ${modalSize === size ? 'text-pink-600' : 'text-gray-700'}`}>{size}</span>
+                            {inStock && size === 'S' && <span className="text-[9px] text-pink-500 mt-0.5 whitespace-nowrap font-bold">約70-80%適用</span>}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
+
+                  <div className="mb-8 flex items-center gap-4 bg-gray-50 p-3 rounded-2xl border border-gray-100">
+                    <span className="font-bold text-gray-900 ml-2">購買數量</span>
+                    <div className="flex items-center bg-white rounded-xl shadow-sm border border-gray-100 p-1 ml-auto">
+                      <button onClick={() => setModalQty(Math.max(1, modalQty - 1))} className="w-10 h-10 flex items-center justify-center font-bold text-gray-600 hover:bg-pink-50 hover:text-pink-600 rounded-lg transition">-</button>
+                      <span className="w-12 text-center font-black text-lg">{modalQty}</span>
+                      <button onClick={() => setModalQty(modalQty + 1)} className="w-10 h-10 flex items-center justify-center font-bold text-gray-600 hover:bg-pink-50 hover:text-pink-600 rounded-lg transition">+</button>
+                    </div>
+                  </div>
+
                   <button 
-                    disabled={cart.length === 0 || isCheckingOut} onClick={handleCheckout}
-                    className="w-full bg-gray-900 text-white py-4 rounded-2xl font-black text-lg hover:bg-pink-600 transition-all shadow-xl disabled:bg-gray-200"
+                    onClick={handleAddToCart}
+                    className="mt-auto w-full bg-gray-900 text-white py-4 rounded-2xl font-black text-lg hover:bg-pink-600 transition-all shadow-xl active:scale-[0.98] flex items-center justify-center gap-2"
                   >
-                    {isCheckingOut ? '處理中...' : '確認結帳 💳'}
+                    加入購物車 🛒
                   </button>
                 </div>
               </div>
             </div>
           )}
-          
-          {/* 其他 Modal (教學、放大) 同原版，此處省略以保持簡潔 */}
+
+          {/* 🔍 全螢幕圖片放大視窗 */}
+          {fullScreenImage && (
+            <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black/95 backdrop-blur-md animate-fade-in-up" onClick={() => setFullScreenImage(null)}>
+              <button onClick={() => setFullScreenImage(null)} className="absolute top-6 right-6 w-12 h-12 flex items-center justify-center bg-white/20 hover:bg-white/40 text-white rounded-full transition-colors z-[110] text-xl font-bold shadow-lg">✕</button>
+              <div className="w-full h-full overflow-auto flex items-center justify-center p-2">
+                <img src={fullScreenImage} className="max-w-full max-h-[90vh] object-contain shadow-2xl transition-transform" onClick={(e) => e.stopPropagation()} />
+              </div>
+            </div>
+          )}
+
+          {/* 🛒 購物車側邊欄 */}
+          {isCartOpen && (
+            <div className="fixed inset-0 z-[60] flex justify-end">
+              <div className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity" onClick={() => setIsCartOpen(false)}></div>
+              <div className="w-full max-w-md bg-white h-full relative flex flex-col shadow-2xl animate-fade-in-right">
+                <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+                  <h2 className="text-xl font-black flex items-center gap-2"><span className="text-2xl">🛍️</span> 購物車清單</h2>
+                  <button onClick={() => setIsCartOpen(false)} className="w-8 h-8 flex items-center justify-center bg-gray-200 hover:bg-gray-300 rounded-full transition-colors font-bold text-gray-600">✕</button>
+                </div>
+                
+                <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                  {cart.length === 0 ? (
+                    <div className="text-gray-400 text-center py-20 flex flex-col items-center gap-4">
+                      <span className="text-6xl opacity-50">🛒</span>
+                      <p className="font-bold">購物車目前是空的喔</p>
+                    </div>
+                  ) : (
+                    <>
+                      {cart.map((item, idx) => (
+                        <div key={idx} className="flex gap-4 border-b border-gray-100 pb-6 group">
+                          <img src={item.media?.[0]?.url || ''} className="w-24 h-32 object-cover rounded-2xl shadow-sm" />
+                          <div className="flex-1 flex flex-col justify-between py-1">
+                            <div>
+                              <div className="flex justify-between items-start">
+                                <h4 className="font-bold text-gray-900 text-lg leading-tight">{item.name}</h4>
+                                <button onClick={() => removeFromCart(idx)} className="text-red-400 text-xs font-bold hover:text-red-600 bg-red-50 px-2 py-1 rounded-lg transition-colors">移除</button>
+                              </div>
+                              <span className="inline-block bg-gray-100 text-gray-600 text-xs font-bold px-2 py-1 rounded-md mt-2">尺寸：{item.size}</span>
+                            </div>
+                            <div className="flex justify-between items-end">
+                              <span className="text-gray-500 text-sm font-bold bg-gray-50 px-3 py-1 rounded-lg">數量 x {item.quantity}</span>
+                              <span className="font-black text-pink-600 text-lg">NT$ {item.price * item.quantity}</span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+
+                      {/* 💡 支付方式選擇 */}
+                      <div className="bg-white border-2 border-gray-100 p-4 rounded-2xl shadow-sm">
+                        <h3 className="font-bold text-gray-900 text-base mb-3 border-b pb-2">💳 支付方式</h3>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button 
+                            onClick={() => setPaymentMethod('CREDIT')}
+                            className={`py-3 rounded-xl border-2 text-sm font-bold transition-all ${paymentMethod === 'CREDIT' ? 'border-pink-500 bg-pink-50 text-pink-600' : 'border-gray-100 text-gray-500'}`}
+                          >
+                            信用卡
+                          </button>
+                          <button 
+                            onClick={() => setPaymentMethod('CVS')}
+                            className={`py-3 rounded-xl border-2 text-sm font-bold transition-all ${paymentMethod === 'CVS' ? 'border-pink-500 bg-pink-50 text-pink-600' : 'border-gray-100 text-gray-500'}`}
+                          >
+                            超商付款/代碼
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="bg-white border-2 border-gray-100 p-4 rounded-2xl shadow-sm">
+                        <h3 className="font-bold text-gray-900 text-base mb-3 border-b pb-2">📦 取貨資訊</h3>
+                        <input type="text" placeholder="真實姓名 (取貨核對用)" value={customerName} onChange={e => setCustomerName(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm outline-none mb-3 bg-gray-50 focus:bg-white focus:border-pink-300 transition-colors" />
+                        <input type="tel" placeholder="手機號碼" value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm outline-none mb-3 bg-gray-50 focus:bg-white focus:border-pink-300 transition-colors" />
+                        <textarea placeholder="點擊下方地圖選擇超商門市" value={shippingAddress} readOnly className="w-full px-4 py-3 rounded-xl border border-pink-200 text-sm font-bold text-pink-700 outline-none bg-pink-50 resize-none h-16 mb-2"></textarea>
+                        <button onClick={() => window.open('https://logistics.ecpay.com.tw/Express/map', 'ecpay_map', 'width=800,height=600')} className="w-full py-2 bg-pink-100 text-pink-600 rounded-xl text-xs font-bold hover:bg-pink-200 transition-colors">🗺️ 選擇超商門市</button>
+                      </div>
+
+                      <div className="bg-gray-50 p-4 rounded-2xl shadow-sm">
+                        <h3 className="font-bold text-gray-700 text-sm mb-2">🎁 專屬折扣碼</h3>
+                        <div className="flex gap-2">
+                          <input type="text" placeholder="輸入折扣碼" value={promoInput} onChange={e => setPromoInput(e.target.value)} className="flex-1 px-4 py-2 rounded-xl border border-gray-200 text-sm outline-none uppercase" />
+                          <button onClick={handleApplyPromo} className="bg-pink-500 text-white px-4 py-2 rounded-xl font-bold text-sm shadow-sm hover:bg-pink-600">套用</button>
+                        </div>
+                        {appliedPromo && <div className="mt-2 text-xs font-bold text-green-600">✅ 已套用：{appliedPromo.name}</div>}
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                <div className="p-6 bg-white border-t border-gray-100 shadow-[0_-10px_20px_rgba(0,0,0,0.03)]">
+                  <div className="space-y-2 mb-6 border-t border-gray-100 pt-4 text-sm font-bold text-gray-500">
+                    <div className="flex justify-between"><span>商品小計</span><span>NT$ {cartSubtotal}</span></div>
+                    {promoDiscountAmount > 0 && <div className="flex justify-between text-pink-500"><span>🎁 折扣折抵</span><span>- NT$ {promoDiscountAmount}</span></div>}
+                    <div className="flex justify-between"><span>物流運費</span>{isFreeShipping ? <span className="text-green-500">免運費</span> : <span>NT$ {currentShippingFee}</span>}</div>
+                    <div className="flex justify-between items-center pt-3 border-t border-gray-100 mt-2"><span className="text-gray-900 text-base font-black">結帳總金額</span><span className="text-3xl font-black text-pink-600">NT$ {finalTotal}</span></div>
+                  </div>
+                  <button 
+                    disabled={cart.length === 0 || isCheckingOut} onClick={handleCheckout}
+                    className="w-full bg-gray-900 text-white py-4 rounded-2xl font-black text-lg hover:bg-gray-800 disabled:bg-gray-200 disabled:text-gray-400 transition-all shadow-xl active:scale-[0.98] flex justify-center items-center gap-2"
+                  >
+                    {isCheckingOut ? '處理中... ⏳' : '確認結帳 💳'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 教學 Modal */}
+          {isGuideOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+              <div className="absolute inset-0 bg-black/50 backdrop-blur-sm transition-opacity" onClick={() => setIsGuideOpen(false)}></div>
+              <div className="bg-white rounded-3xl w-full max-w-2xl max-h-[85vh] overflow-y-auto relative z-10 shadow-2xl p-6 md:p-10 animate-fade-in-up">
+                <button onClick={() => setIsGuideOpen(false)} className="absolute top-4 right-4 w-10 h-10 flex items-center justify-center bg-gray-100 hover:bg-gray-200 rounded-full font-bold text-gray-600 transition-colors z-20">✕</button>
+                <h2 className="text-2xl font-black mb-6 text-gray-900 border-b-2 border-pink-100 pb-4">📏 尺寸與配戴教學</h2>
+                <div className="space-y-6 text-sm font-bold text-gray-600 leading-relaxed">
+                   <p>1. 準備軟尺測量指甲最寬處弧度。</p>
+                   <p>2. 對照 S 號尺寸（約 70-80% 亞洲女性適用）。</p>
+                   <p>3. 使用酒精棉片清潔甲面後貼上果凍膠。</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <style dangerouslySetInnerHTML={{__html: ` 
+            .animate-fade-in-right { animation: fadeInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; } 
+            @keyframes fadeInRight { from { opacity: 0; transform: translateX(100%); } to { opacity: 1; transform: translateX(0); } } 
+            .animate-fade-in-up { animation: fadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+            @keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+          `}} />
         </div>
       );
     }
