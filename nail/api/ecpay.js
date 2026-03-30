@@ -13,10 +13,11 @@ if (!admin.apps.length) {
 }
 const db = admin.firestore();
 
+// 您的固定參數
 const appId = 'nail-inventory-app';
 const adminUserId = "MvkJo5e1kEcBS0fGGMr4RKdQjYg1"; 
 
-// 🛡️ 後端定義與前端完全一致的規則
+// 🛡️ 後端運費與折扣規則 (必須與前端 shop.html 完全一致)
 const SHIPPING_FEE = 65;              
 const FREE_SHIPPING_THRESHOLD = 1000; 
 const PROMO_CODES = {
@@ -31,14 +32,14 @@ module.exports = async (req, res) => {
 
   try {
     const body = req.body;
-    const items = body.items || [];
+    const items = body.items || []; // 接收前端傳來的商品陣列
     const discountCode = (body.discountCode || '').toUpperCase().trim();
-    const paymentMethod = body.paymentMethod || 'ALL'; // 預設接收前端傳來的支付方式
+    const paymentMethod = body.paymentMethod || 'ALL'; // 接收前端傳來的支付方式
     
     let backendSubtotal = 0;
     const orderItems = [];
 
-    // 1. 驗證商品單價並計算小計
+    // 1. 🛡️ 核心防護：後端驗價 (計算商品總額)
     for (const item of items) {
       const doc = await db.collection('artifacts').doc(appId).collection('users').doc(adminUserId).collection('inventory').doc(item.id).get();
       if (doc.exists) {
@@ -54,44 +55,41 @@ module.exports = async (req, res) => {
       }
     }
 
-    if (backendSubtotal === 0) return res.status(400).send('購物車為空');
+    if (backendSubtotal === 0) return res.status(400).send('購物車無效');
 
-    // 2. 計算折扣金額
+    // 2. 計算折扣
     let discountAmount = 0;
     if (discountCode && PROMO_CODES[discountCode]) {
       const promo = PROMO_CODES[discountCode];
-      if (promo.type === 'percent') {
-        discountAmount = Math.round(backendSubtotal * (1 - promo.value));
-      } else if (promo.type === 'minus') {
-        discountAmount = promo.value;
-      }
+      if (promo.type === 'percent') discountAmount = Math.round(backendSubtotal * (1 - promo.value));
+      else if (promo.type === 'minus') discountAmount = promo.value;
     }
 
-    // 3. 計算運費 (滿千免運)
+    // 3. 計算運費 (滿額免運)
     const currentShippingFee = backendSubtotal >= FREE_SHIPPING_THRESHOLD ? 0 : SHIPPING_FEE;
 
-    // 4. 計算最終總金額 (🛡️ 這就是傳給綠界的關鍵金額)
+    // 4. 🛡️ 計算最終總金額 (包含運費)
     const finalTotal = backendSubtotal - discountAmount + currentShippingFee;
 
-    // 📝 建立訂單紀錄
     const MerchantTradeNo = 'NAILS' + new Date().getTime();
+    
+    // 建立訂單紀錄
     await db.collection('artifacts').doc(appId).collection('users').doc(adminUserId).collection('orders').doc(MerchantTradeNo).set({
-      orderId: MerchantTradeNo,
+      id: MerchantTradeNo,
       customerInfo: {
         name: body.name || '未提供',
         phone: body.phone || '未提供',
         address: body.address || '未提供'
       },
       items: orderItems,
-      subtotal: backendSubtotal,
-      discount: discountAmount,
+      totalAmount: finalTotal, // 這是後端算好的正確總額 (商品+運費)
+      discountAmount: discountAmount,
       shippingFee: currentShippingFee,
-      totalAmount: finalTotal,
       status: 'pending',
       createdAt: new Date().toISOString()
     });
 
-    // 💳 產生綠界結帳表單
+    // 綠界參數
     const MerchantID = '3411891'; 
     const HashKey    = 'VZ0XSU4VbvmTeMsK';    
     const HashIV     = 'wAFot8tTLMamEOBJ';     
@@ -106,16 +104,16 @@ module.exports = async (req, res) => {
     const OrderResultURL = `${protocol}://${host}/shop.html?order=success`; 
 
     const params = {
-      ChoosePayment: paymentMethod, // 這裡讓用戶可以選擇超商(CVS)或信用卡(CREDIT)
+      ChoosePayment: paymentMethod, // 支援 CVS (超商) 或 ALL
       EncryptType: '1', 
-      ItemName: `穿戴甲商品等 ${items.length} 件`,
+      ItemName: '指尖造藝美甲訂單(含運費)',
       MerchantID: MerchantID, 
       MerchantTradeDate: MerchantTradeDate,
       MerchantTradeNo: MerchantTradeNo, 
       OrderResultURL: OrderResultURL,
       PaymentType: 'aio', 
       ReturnURL: ReturnURL,
-      TotalAmount: finalTotal.toString(), // 🛡️ 傳送後端計算出的 455 元
+      TotalAmount: finalTotal.toString(), // 🛡️ 傳送包含運費的正確數字
       TradeDesc: '指尖造藝官網訂單',
     };
 
