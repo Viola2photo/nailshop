@@ -2,7 +2,6 @@
 <html lang="zh-TW">
 <head>
   <meta charset="UTF-8">
-  <!-- 💡 移除 user-scalable=no，讓手機用戶可以自由雙指縮放網頁 -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>指尖造藝 - 專屬穿戴甲</title>
   
@@ -66,7 +65,6 @@
 
     const { useState, useEffect, useMemo } = React;
 
-    // --- 💡 修正版商品卡片元件 (預載入所有圖片，解決手機網速慢導致的閃爍與不輪播) ---
     const ProductCard = ({ product, onClick }) => {
       const [mediaIndex, setMediaIndex] = useState(0);
 
@@ -75,7 +73,7 @@
         if (product.media && product.media.length > 1) {
           interval = setInterval(() => {
             setMediaIndex(prev => (prev + 1) % product.media.length);
-          }, 1500); // 0.5 秒切換
+          }, 1500);
         }
         return () => clearInterval(interval);
       }, [product.media]);
@@ -113,9 +111,7 @@
       );
     };
 
-    // --- 主程式 ---
     function Shop() {
-      // 狀態管理
       const [products, setProducts] = useState([]);
       const [visibleCount, setVisibleCount] = useState(8); 
       const [selectedShape, setSelectedShape] = useState('全部');
@@ -124,12 +120,10 @@
       const [isLoading, setIsLoading] = useState(true);
       const [isCheckingOut, setIsCheckingOut] = useState(false);
       
-      // 放大預覽彈窗狀態
       const [selectedProduct, setSelectedProduct] = useState(null);
       const [modalSize, setModalSize] = useState('');
       const [modalQty, setModalQty] = useState(1);
       
-      // 💡 全螢幕放大圖片狀態
       const [fullScreenImage, setFullScreenImage] = useState(null);
 
       const [user, setUser] = useState(null);
@@ -143,6 +137,19 @@
       const [customerPhone, setCustomerPhone] = useState('');
       const [shippingAddress, setShippingAddress] = useState('');
       const [isGuideOpen, setIsGuideOpen] = useState(false);
+
+      // 新增：紀錄正在重新付款的訂單 ID，防呆避免重複點擊
+      const [repayingOrderId, setRepayingOrderId] = useState(null);
+
+      // 檢查是否從綠界結帳成功跳轉回來
+      useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('order') === 'success') {
+          alert('✅ 結帳成功！請留意訂單出貨通知。');
+          setViewMode('orders');
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }
+      }, []);
 
       useEffect(() => {
         const unsubscribe = auth.onAuthStateChanged((currentUser) => {
@@ -212,7 +219,6 @@
         window.scrollTo({ top: 0, behavior: 'smooth' });
       };
 
-      // 打開放大預覽頁面
       const openProductModal = (product) => {
         setSelectedProduct(product);
         setModalSize('');
@@ -257,19 +263,30 @@
         }
       };
 
-      const handleCheckout = async () => {
-        if (!customerName || !customerPhone || !shippingAddress) { alert('請先填寫收件人姓名、電話，並選擇取件門市！'); return; }
-        setIsCheckingOut(true);
-        try {
-          let itemNamesArr = cart.map(i => `${i.name}(${i.size}) x ${i.quantity}`);
-          if (currentShippingFee > 0) itemNamesArr.push(`物流運費 x 1`);
-          if (promoDiscountAmount > 0) itemNamesArr.push(`${appliedPromo.name}折抵 x 1`);
-          const itemNames = itemNamesArr.join('#').substring(0, 390);
+      // 呼叫超商地圖的函式
+      const handleOpenMap = (logisticsType) => {
+        // 使用 window.open 開啟 Vercel 後端提供的電子地圖頁面
+        const mapWindow = window.open(`/api/map?logisticsType=${logisticsType}`, 'ECPayMap', 'width=800,height=600,center=yes');
+        if (!mapWindow) {
+          alert('請允許瀏覽器開啟彈出視窗以選擇門市！');
+        }
+      };
 
-          let orderId = `ORD${Date.now()}`;
+      // 🚀 購物車結帳處理
+      const handleCheckout = async () => {
+        if (!customerName || !customerPhone || !shippingAddress) { 
+          alert('請先填寫收件人姓名、電話，並選擇取件門市或地址！'); 
+          return; 
+        }
+        
+        setIsCheckingOut(true);
+        let tempOrderId = `ORD${Date.now()}`;
+        
+        try {
+          // 2. 如果使用者有登入，我們在前端先建立一筆個人的「處理中」訂單讓他看得到
           if (user) {
-             await db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('orders').doc(orderId).set({
-                orderId: orderId,
+             await db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('orders').doc(tempOrderId).set({
+                orderId: tempOrderId,
                 items: cart,
                 totalAmount: finalTotal,
                 customerInfo: { name: customerName, phone: customerPhone, address: shippingAddress },
@@ -279,24 +296,84 @@
              });
           }
 
+          // 1. 整理傳給 Vercel 後端的資料 (需與後端 API 期望的格式一致)
+          const checkoutData = {
+            name: customerName,
+            phone: customerPhone,
+            address: shippingAddress,
+            items: cart.map(item => ({
+              id: item.id,
+              size: item.size,
+              quantity: item.quantity
+            })),
+            discountCode: appliedPromo ? appliedPromo.code : '',
+            orderId: tempOrderId // 將這筆訂單號傳給後端對應
+          };
+
+          // 3. 呼叫我們剛剛部署好的 Vercel 後端 API
           const response = await fetch('/api/ecpay', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-              total: finalTotal, items: itemNames,
-              name: customerName, phone: customerPhone, address: shippingAddress,
-              customOrderId: orderId
-            }) 
+            body: JSON.stringify(checkoutData)
           });
           
-          if (!response.ok) throw new Error('結帳連線失敗');
-          const html = await response.text();
-          document.open(); document.write(html); document.close();
+          if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(errText || '結帳連線失敗');
+          }
+          
+          // 4. 接收後端產生的綠界安全轉跳表單，並直接覆蓋畫面轉跳
+          const formHtml = await response.text();
+          document.open(); 
+          document.write(formHtml); 
+          document.close();
 
-        } catch(e) {
-          console.error(e);
-          alert('【系統提示】因為目前尚無後端串接綠界，系統將模擬結帳成功並存入訂單。');
-          setCart([]); setIsCartOpen(false); setViewMode('orders'); setIsCheckingOut(false);
+        } catch (error) {
+          console.error("結帳發生錯誤:", error);
+          alert("結帳連線失敗，請檢查網路或稍後再試：" + error.message);
+          setIsCheckingOut(false);
+        }
+      };
+
+      // 🚀 針對未付款（Pending）訂單重新發起結帳
+      const handleRepay = async (order) => {
+        setRepayingOrderId(order.id);
+        try {
+          // 重建結帳資料
+          const checkoutData = {
+            name: order.customerInfo?.name || '',
+            phone: order.customerInfo?.phone || '',
+            address: order.customerInfo?.address || '',
+            items: order.items?.map(item => ({
+              id: item.id,
+              size: item.size,
+              quantity: item.quantity
+            })) || [],
+            discountCode: order.promoCode || '',
+            orderId: order.orderId 
+          };
+
+          const response = await fetch('/api/ecpay', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(checkoutData)
+          });
+          
+          if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(errText || '結帳連線失敗');
+          }
+          
+          // 接收後端產生的綠界轉跳表單，進行跳轉
+          const formHtml = await response.text();
+          document.open(); 
+          document.write(formHtml); 
+          document.close();
+        } catch (error) {
+          console.error("重新付款發生錯誤:", error);
+          alert("結帳連線失敗，請稍後再試：" + error.message);
+        } finally {
+          setRepayingOrderId(null);
         }
       };
 
@@ -393,7 +470,6 @@
                  </div>
               ) : (
                 <>
-                  {/* 💡 修正網格：手機版 (sm 以下) 強制 1 欄呈現大圖，提升視覺衝擊！ */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 md:gap-8">
                     {filteredProducts.slice(0, visibleCount).map(product => (
                       <ProductCard key={product.id} product={product} onClick={openProductModal} />
@@ -425,15 +501,27 @@
                   <div className="space-y-6">
                     {userOrders.map(order => (
                       <div key={order.id} className="bg-white rounded-3xl p-6 border border-gray-100 shadow-sm hover:shadow-md transition">
-                        <div className="flex justify-between items-center border-b border-gray-100 pb-4 mb-4">
+                        <div className="flex justify-between items-start border-b border-gray-100 pb-4 mb-4">
                           <div>
                             <span className="text-xs text-gray-400 font-bold block mb-1">{new Date(order.createdAt).toLocaleDateString('zh-TW', { year:'numeric', month:'long', day:'numeric', hour:'2-digit', minute:'2-digit' })}</span>
                             <span className="text-sm font-bold text-gray-800 bg-gray-100 px-3 py-1 rounded-lg">單號: {order.orderId}</span>
                           </div>
-                          <div className={`px-4 py-1.5 rounded-full text-sm font-bold ${
-                            order.status === 'pending' ? 'bg-amber-100 text-amber-700' : order.status === 'paid' ? 'bg-blue-100 text-blue-700' : order.status === 'shipped' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'
-                          }`}>
-                            {order.status === 'pending' ? '⏳ 處理中' : order.status === 'paid' ? '✅ 已付款' : order.status === 'shipped' ? '🚚 已出貨' : order.status}
+                          <div className="flex flex-col items-end gap-2">
+                            <div className={`px-4 py-1.5 rounded-full text-sm font-bold ${
+                              order.status === 'pending' ? 'bg-amber-100 text-amber-700' : order.status === 'paid' ? 'bg-blue-100 text-blue-700' : order.status === 'shipped' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'
+                            }`}>
+                              {order.status === 'pending' ? '⏳ 處理中 (未付款)' : order.status === 'paid' ? '✅ 已付款' : order.status === 'shipped' ? '🚚 已出貨' : order.status}
+                            </div>
+                            {/* 新增：繼續付款按鈕 */}
+                            {order.status === 'pending' && (
+                              <button 
+                                onClick={() => handleRepay(order)}
+                                disabled={repayingOrderId === order.id}
+                                className="text-xs bg-pink-500 hover:bg-pink-600 text-white px-4 py-2 rounded-full shadow-sm transition-colors font-bold disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center gap-1"
+                              >
+                                {repayingOrderId === order.id ? '連線中...' : '💳 繼續結帳'}
+                              </button>
+                            )}
                           </div>
                         </div>
                         <div className="space-y-3 mb-4">
@@ -450,7 +538,7 @@
                         </div>
                         <div className="bg-gray-50 rounded-xl p-4 flex justify-between items-center">
                           <div className="text-xs text-gray-500">
-                            門市：{order.customerInfo?.address} <br/>
+                            門市 / 地址：{order.customerInfo?.address} <br/>
                             收件人：{order.customerInfo?.name}
                           </div>
                           <div className="text-right">
@@ -470,16 +558,14 @@
             🚀
           </button>
 
-          {/* 🌟 商品放大預覽 (Quick View Modal) 🌟 */}
+          {/* 🌟 商品放大預覽 */}
           {selectedProduct && (
             <div className="fixed inset-0 z-40 flex items-center justify-center p-4">
               <div className="absolute inset-0 bg-black/70 backdrop-blur-sm transition-opacity" onClick={() => setSelectedProduct(null)}></div>
               <div className="bg-white rounded-[2rem] w-full max-w-4xl max-h-[90vh] overflow-y-auto relative z-50 shadow-2xl flex flex-col md:flex-row animate-fade-in-up">
                 
-                {/* 💡 關閉按鈕：加上半透明白色背景，確保在手機版蓋在圖片上方時也能看清楚 */}
                 <button onClick={() => setSelectedProduct(null)} className="absolute top-4 right-4 w-10 h-10 flex items-center justify-center bg-white/80 backdrop-blur-md hover:bg-white rounded-full font-bold text-gray-800 transition-colors z-20 shadow-md">✕</button>
                 
-                {/* 💡 左側大圖：加入 w-full 與 shrink-0 確保手機版正確佔據空間，並將底色改為柔和的 gray-50 */}
                 <div className="w-full md:w-1/2 shrink-0 bg-gray-50 flex overflow-x-auto snap-x snap-mandatory hide-scrollbar relative">
                   {selectedProduct.media?.map((m, idx) => (
                     <div key={idx} className="w-full flex-shrink-0 snap-center aspect-[4/5] md:aspect-auto md:h-full flex items-center justify-center relative group">
@@ -492,7 +578,6 @@
                            title="點擊放大圖片"
                          />
                        }
-                       {/* 手機板也會明顯看到的放大提示 */}
                        {m.type !== 'video' && (
                          <button 
                            onClick={() => setFullScreenImage(m.url)} 
@@ -565,7 +650,7 @@
             </div>
           )}
 
-          {/* 🔍 全螢幕圖片放大視窗 (Lightbox) */}
+          {/* 🔍 全螢幕圖片放大視窗 */}
           {fullScreenImage && (
             <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black/95 backdrop-blur-md animate-fade-in-up" onClick={() => setFullScreenImage(null)}>
               <button 
@@ -594,7 +679,6 @@
               <div className="bg-white rounded-3xl w-full max-w-2xl max-h-[85vh] overflow-y-auto relative z-10 shadow-2xl p-6 md:p-10 animate-fade-in-up">
                 <button onClick={() => setIsGuideOpen(false)} className="absolute top-4 right-4 w-10 h-10 flex items-center justify-center bg-gray-100 hover:bg-gray-200 rounded-full font-bold text-gray-600 transition-colors z-20">✕</button>
                 
-                {/* 尺寸測量區 */}
                 <h2 className="text-2xl font-black mb-6 text-gray-900 border-b-2 border-pink-100 pb-4 mt-2">📏 如何測量指甲尺寸？</h2>
                 <div className="space-y-6 text-gray-700 leading-relaxed mb-10">
                    <div className="bg-pink-50 p-6 rounded-2xl border border-pink-100">
@@ -627,7 +711,6 @@
                    </div>
                 </div>
 
-                {/* ✨ 穿戴與卸除教學區 */}
                 <h2 className="text-2xl font-black mb-6 text-gray-900 border-b-2 border-pink-100 pb-4">✨ 如何完美配戴與卸除？</h2>
                 <div className="space-y-6 text-gray-700 leading-relaxed mb-10">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -654,7 +737,6 @@
                   <p className="text-xs text-center text-gray-400 font-bold mt-4">💡 貼心提醒：剛貼好的前 2 小時盡量不要碰水，可以讓果凍膠更持久喔！</p>
                 </div>
 
-                {/* 專業美甲製作流程區 */}
                 <h2 className="text-2xl font-black mb-6 text-gray-900 border-b-2 border-pink-100 pb-4">💅 專業美甲製作流程</h2>
                 <section className="bg-[#fbf6e9] p-6 md:p-8 rounded-3xl relative overflow-hidden border border-[#f0e8d5]">
                   <div className="absolute top-0 right-0 w-40 h-40 bg-white/60 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none"></div>
@@ -728,7 +810,18 @@
                       <h3 className="font-bold text-gray-900 text-base mb-3 border-b pb-2">📦 取貨資訊</h3>
                       <input type="text" placeholder="真實姓名 (取貨核對用)" value={customerName} onChange={e => setCustomerName(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm outline-none mb-3 bg-gray-50 focus:bg-white focus:border-pink-300 transition-colors" />
                       <input type="tel" placeholder="手機號碼" value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm outline-none mb-3 bg-gray-50 focus:bg-white focus:border-pink-300 transition-colors" />
-                      <textarea placeholder="手動填寫地址或使用下方超商按鈕" value={shippingAddress} onChange={e => setShippingAddress(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-pink-200 text-sm font-bold text-pink-700 outline-none bg-pink-50 resize-none h-16 mb-2"></textarea>
+                      
+                      {/* 🚀 新增的超商按鈕區塊 */}
+                      <div className="flex gap-2 mb-2">
+                        <button type="button" onClick={() => handleOpenMap('UNIMARTC2C')} className="flex-1 bg-green-50 hover:bg-green-100 text-green-700 font-bold py-2.5 rounded-xl border border-green-200 transition-colors text-sm flex items-center justify-center gap-1 shadow-sm">
+                          🏪 7-11 門市
+                        </button>
+                        <button type="button" onClick={() => handleOpenMap('FAMIC2C')} className="flex-1 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold py-2.5 rounded-xl border border-blue-200 transition-colors text-sm flex items-center justify-center gap-1 shadow-sm">
+                          🏪 全家 門市
+                        </button>
+                      </div>
+
+                      <textarea placeholder="點選上方按鈕選擇超商，或直接填寫宅配地址" value={shippingAddress} onChange={e => setShippingAddress(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-pink-200 text-sm font-bold text-pink-700 outline-none bg-pink-50 resize-none h-16 mb-2"></textarea>
                     </div>
                   )}
 
