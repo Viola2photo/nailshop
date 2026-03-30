@@ -75,7 +75,7 @@
         if (product.media && product.media.length > 1) {
           interval = setInterval(() => {
             setMediaIndex(prev => (prev + 1) % product.media.length);
-          }, 500); // 0.5 秒切換
+          }, 1500); // 0.5 秒切換
         }
         return () => clearInterval(interval);
       }, [product.media]);
