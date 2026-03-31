@@ -323,7 +323,7 @@
             customerInfo: { name: customerName, phone: customerPhone, address: shippingAddress },
             promoCode: appliedPromo ? appliedPromo.code : null,
             status: 'pending',
-            paymentMethod: isCod ? 'COD' : paymentMethod,
+            paymentMethod: paymentMethod,
             isCod,
             codNote,
             logisticsType: shippingLogisticsType,
@@ -332,12 +332,6 @@
 
           if (user) {
             await db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('orders').doc(orderId).set(orderData);
-          }
-
-          if (isCod) {
-            setCart([]); setIsCartOpen(false); setViewMode('orders'); setIsCheckingOut(false);
-            alert('✅ 貨到付款訂單已建立，請至「我的訂單」查看。');
-            return;
           }
 
           const response = await fetch('/api/ecpay', {
