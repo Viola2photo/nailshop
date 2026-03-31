@@ -38,10 +38,6 @@ module.exports = async (req, res) => {
     const isCod = body.isCod === true;
     const codNote = body.codNote || (isCod ? '店到店貨到付款' : '一般付款');
 
-    if (isCod) {
-      return res.status(400).send('COD 訂單不需要綠界金流');
-    }
-
     let backendSubtotal = 0;
     const orderItems = [];
 
