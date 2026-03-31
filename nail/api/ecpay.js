@@ -107,6 +107,8 @@ module.exports = async (req, res) => {
     const logisticsAddress = body.customerInfo?.address || '';
     const receiverName = body.customerInfo?.name || '';
     const receiverPhone = body.customerInfo?.phone || '';
+    const receiverAddress = paymentMethod === 'CVS' ? '' : logisticsAddress;
+    const logisticsType = body.logisticsType || '';
 
     const params = {
       ChoosePayment: paymentMethod, // 支援 CVS (超商) 或 ALL
@@ -124,11 +126,17 @@ module.exports = async (req, res) => {
       SenderPhone: receiverPhone,
       ReceiverName: receiverName,
       ReceiverPhone: receiverPhone,
-      ReceiverAddress: logisticsAddress,
+      ReceiverAddress: receiverAddress,
       CustomField1: receiverName,
       CustomField2: receiverPhone,
       CustomField3: logisticsAddress,
     };
+
+    if (paymentMethod === 'CVS') {
+      params.LogisticsType = 'CVS';
+      params.LogisticsSubType = logisticsType || 'UNIMARTC2C';
+      params.IsCollection = 'N';
+    }
 
     // 簽章邏輯
     const keys = Object.keys(params).sort();
