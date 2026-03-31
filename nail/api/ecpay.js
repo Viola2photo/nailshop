@@ -112,11 +112,13 @@ module.exports = async (req, res) => {
     const logisticsAddress = body.customerInfo?.address || '';
     const receiverName = body.customerInfo?.name || '';
     const receiverPhone = body.customerInfo?.phone || '';
-    const receiverAddress = paymentMethod === 'CVS' ? '' : logisticsAddress;
     const logisticsType = body.logisticsType || '';
+    const effectivePaymentMethod = 'ALL';
+    const isCVS = logisticsType === 'UNIMARTC2C' || logisticsType === 'FAMIC2C';
+    const receiverAddress = isCVS ? '' : logisticsAddress;
 
     const params = {
-      ChoosePayment: paymentMethod, // 支援 CVS (超商) 或 ALL
+      ChoosePayment: effectivePaymentMethod, // 讓顧客可自選付款方式
       EncryptType: '1', 
       ItemName: `指尖造藝美甲訂單(含運費) | ${receiverName} | ${receiverPhone}`,
       MerchantID: MerchantID, 
@@ -131,17 +133,18 @@ module.exports = async (req, res) => {
       SenderPhone: receiverPhone,
       ReceiverName: receiverName,
       ReceiverPhone: receiverPhone,
-      ReceiverAddress: receiverAddress,
       CustomField1: receiverName,
       CustomField2: receiverPhone,
       CustomField3: logisticsAddress,
       CustomField4: codNote,
     };
 
-    if (paymentMethod === 'CVS') {
+    if (isCVS) {
       params.LogisticsType = 'CVS';
       params.LogisticsSubType = logisticsType || 'UNIMARTC2C';
       params.IsCollection = 'N';
+    } else if (receiverAddress) {
+      params.ReceiverAddress = receiverAddress;
     }
 
     // 簽章邏輯
