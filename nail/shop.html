@@ -144,6 +144,7 @@
       const [promoInput, setPromoInput] = useState('');
       const [appliedPromo, setAppliedPromo] = useState(null);
       const [paymentMethod, setPaymentMethod] = useState('ALL');
+      const [isCod, setIsCod] = useState(false);
       const [customerName, setCustomerName] = useState('');
       const [customerPhone, setCustomerPhone] = useState('');
       const [shippingAddress, setShippingAddress] = useState('');
@@ -312,33 +313,41 @@
             price: item.price
           }));
 
-          let orderId = `ORD${Date.now()}`;
-          
+          const orderId = `ORD${Date.now()}`;
+          const codNote = isCod ? '店到店貨到付款' : '一般付款';
+
+          const orderData = {
+            orderId,
+            items: orderItems,
+            totalAmount: finalTotal,
+            customerInfo: { name: customerName, phone: customerPhone, address: shippingAddress },
+            promoCode: appliedPromo ? appliedPromo.code : null,
+            status: 'pending',
+            paymentMethod: isCod ? 'COD' : paymentMethod,
+            isCod,
+            codNote,
+            logisticsType: shippingLogisticsType,
+            createdAt: new Date().toISOString()
+          };
+
           if (user) {
-             await db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('orders').doc(orderId).set({
-                orderId: orderId,
-                items: orderItems,
-                totalAmount: finalTotal,
-                customerInfo: { name: customerName, phone: customerPhone, address: shippingAddress },
-                promoCode: appliedPromo ? appliedPromo.code : null,
-                status: 'pending',
-                createdAt: new Date().toISOString()
-             });
+            await db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('orders').doc(orderId).set(orderData);
           }
 
-          // 導向綠界支付
+          if (isCod) {
+            setCart([]); setIsCartOpen(false); setViewMode('orders'); setIsCheckingOut(false);
+            alert('✅ 貨到付款訂單已建立，請至「我的訂單」查看。');
+            return;
+          }
+
           const response = await fetch('/api/ecpay', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-              orderId: orderId,
-              items: orderItems,
-              promoCode: appliedPromo ? appliedPromo.code : null,
-              paymentMethod: paymentMethod,
-              logisticsType: shippingLogisticsType,
-              customerInfo: { name: customerName, phone: customerPhone, address: shippingAddress },
-              total: finalTotal
-            }) 
+            body: JSON.stringify({
+              ...orderData,
+              paymentMethod,
+              logisticsType: shippingLogisticsType
+            })
           });
           
           if (!response.ok) throw new Error('結帳連線失敗');
@@ -363,7 +372,9 @@
               promoCode: order.promoCode,
               paymentMethod: order.paymentMethod || 'ALL',
               customerInfo: order.customerInfo,
-              total: order.totalAmount 
+              total: order.totalAmount,
+              isCod: order.isCod || false,
+              codNote: order.codNote || ''
             }) 
           });
           if (!response.ok) throw new Error('結帳連線失敗');
@@ -603,6 +614,14 @@
                               <button onClick={() => { setShippingLogisticsType('FAMIC2C'); window.open('/api/ecpay_map?logisticsType=FAMIC2C', 'ecpay_map', 'width=1000,height=700'); }} className="py-3 bg-white text-blue-600 rounded-2xl text-[10px] font-black border border-blue-100 shadow-sm hover:bg-blue-50 transition-all uppercase">🏪 全家 門市</button>
                            </div>
                         </div>
+                      </div>
+
+                      <div className="bg-white p-4 rounded-2xl border border-gray-100 mt-4">
+                        <label className="inline-flex items-center gap-2 text-xs font-black text-gray-700">
+                          <input type="checkbox" checked={isCod} onChange={e => setIsCod(e.target.checked)} className="w-4 h-4 accent-pink-500" />
+                          店到店貨到付款（勾選後直接後台訂單，不導向綠界）
+                        </label>
+                        <p className="text-[10px] text-gray-400 mt-1">選擇 COD 後系統會建立後台訂單就可出貨，無需綠界金流。</p>
                       </div>
 
                       <div className="bg-white p-6 rounded-2xl border border-gray-100 mt-4">
