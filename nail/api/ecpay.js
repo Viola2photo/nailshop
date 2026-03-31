@@ -35,7 +35,13 @@ module.exports = async (req, res) => {
     const items = body.items || []; // 接收前端傳來的商品陣列
     const discountCode = (body.discountCode || '').toUpperCase().trim();
     const paymentMethod = body.paymentMethod || 'ALL'; // 接收前端傳來的支付方式
-    
+    const isCod = body.isCod === true;
+    const codNote = body.codNote || (isCod ? '店到店貨到付款' : '一般付款');
+
+    if (isCod) {
+      return res.status(400).send('COD 訂單不需要綠界金流');
+    }
+
     let backendSubtotal = 0;
     const orderItems = [];
 
@@ -86,6 +92,9 @@ module.exports = async (req, res) => {
       discountAmount: discountAmount,
       shippingFee: currentShippingFee,
       paymentMethod,
+      isCod,
+      codNote,
+      logisticsType: body.logisticsType || '',
       status: 'pending',
       createdAt: new Date().toISOString()
     });
@@ -130,6 +139,7 @@ module.exports = async (req, res) => {
       CustomField1: receiverName,
       CustomField2: receiverPhone,
       CustomField3: logisticsAddress,
+      CustomField4: codNote,
     };
 
     if (paymentMethod === 'CVS') {

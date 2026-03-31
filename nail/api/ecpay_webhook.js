@@ -67,6 +67,9 @@ module.exports = async (req, res) => {
         address: existingOrder.customerInfo?.address || data.CustomField3 || data.CVSAddress || ''
       };
 
+      const isCod = existingOrder.isCod || data.CustomField4 === '店到店貨到付款';
+      const codNote = existingOrder.codNote || data.CustomField4 || '';
+
       // 更新 Firebase 訂單狀態為已付款
       await orderRef.update({
         status: 'paid',
@@ -74,6 +77,8 @@ module.exports = async (req, res) => {
         paymentType: data.PaymentType, // 記錄客人是用信用卡還是超商付的
         tradeNo: data.TradeNo,         // 綠界的交易序號 (方便日後對帳退款)
         customerInfo,
+        isCod,
+        codNote,
         ecpayRaw: data
       });
       
