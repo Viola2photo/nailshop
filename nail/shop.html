@@ -314,7 +314,8 @@
           }));
 
           const orderId = `ORD${Date.now()}`;
-          const codNote = isCod ? '店到店貨到付款' : '一般付款';
+          const codNote = isCod ? '貨到付款' : '一般付款';
+          const effectivePaymentMethod = 'ALL';
 
           const orderData = {
             orderId,
@@ -323,7 +324,7 @@
             customerInfo: { name: customerName, phone: customerPhone, address: shippingAddress },
             promoCode: appliedPromo ? appliedPromo.code : null,
             status: 'pending',
-            paymentMethod: paymentMethod,
+            paymentMethod: effectivePaymentMethod,
             isCod,
             codNote,
             logisticsType: shippingLogisticsType,
@@ -339,8 +340,10 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               ...orderData,
-              paymentMethod,
-              logisticsType: shippingLogisticsType
+              paymentMethod: effectivePaymentMethod,
+              logisticsType: shippingLogisticsType,
+              isCod,
+              codNote
             })
           });
           
@@ -616,16 +619,6 @@
                           店到店貨到付款（勾選後直接後台訂單，不導向綠界）
                         </label>
                         <p className="text-[10px] text-gray-400 mt-1">選擇 COD 後系統會建立後台訂單就可出貨，無需綠界金流。</p>
-                      </div>
-
-                      <div className="bg-white p-6 rounded-2xl border border-gray-100 mt-4">
-                        <label className="text-[10px] font-black text-gray-600 uppercase tracking-widest mb-1 block">付款方式</label>
-                        <select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-gray-200 text-xs font-black">
-                          <option value="ALL">可接受所有付款</option>
-                          <option value="Credit">信用卡</option>
-                          <option value="CVS">超商付款</option>
-                          <option value="ATM">網路ATM</option>
-                        </select>
                       </div>
 
                       <div className="bg-white p-4 rounded-3xl border border-gray-100 shadow-sm">
