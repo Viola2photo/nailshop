@@ -1,769 +1,221 @@
-<!DOCTYPE html>
-<html lang="zh-TW">
+﻿<!DOCTYPE html>
+<html lang=" zh-TW\>
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>指尖造藝 - 專屬手工穿戴甲</title>
-  
-  <!-- Tailwind & React & Babel -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script defer crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script defer crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  
-  <!-- Firebase -->
-  <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-auth-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore-compat.js"></script>
+ <meta charset=\UTF-8\ />
+ <meta name=\viewport\ content=\width=device-width initial-scale=1.0\ />
+ <title>指尖造藝 - Shop</title>
+ <script src=\https://cdn.tailwindcss.com\></script>
+ <script defer crossorigin src=\https://unpkg.com/react@18/umd/react.production.min.js\></script>
+ <script defer crossorigin src=\https://unpkg.com/react-dom@18/umd/react-dom.production.min.js\></script>
+ <script src=\https://www.gstatic.com/firebasejs/10.8.1/firebase-app-compat.js\></script>
+ <script src=\https://www.gstatic.com/firebasejs/10.8.1/firebase-auth-compat.js\></script>
+ <script src=\https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore-compat.js\></script>
 </head>
-<body class="bg-[#FAF9F8] text-gray-800 font-sans">
-  
-  <div id="root">
-    <style>
-      .preloader { position: fixed; inset: 0; background-color: #FAF9F8; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 9999; }
-      .preloader-spinner { width: 50px; height: 50px; border: 4px solid rgba(236, 72, 153, 0.1); border-left-color: #ec4899; border-radius: 50%; animation: spin 1s linear infinite; }
-      @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-      .preloader-text { margin-top: 16px; color: #9ca3af; font-family: sans-serif; font-weight: bold; font-size: 14px; letter-spacing: 2px; }
-      .hide-scrollbar::-webkit-scrollbar { display: none; }
-      .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-      html { scroll-behavior: smooth; }
-      .fade-media { transition: opacity 0.3s ease-in-out; }
-    </style>
-    <div class="preloader">
-      <div class="preloader-spinner"></div>
-      <div class="preloader-text">載入中...</div>
-    </div>
-  </div>
+<body class=\bg-[#FAF9F8] text-gray-800\>
+ <div id=\root\></div>
+ <script type=\text/babel\>
+const { useState, useEffect, useMemo } = React;
 
-  <script type="text/babel">
-    const firebaseConfig = {
-      apiKey: "AIzaSyDQZGeeubB8bEUL59v9yt0QBAfIWJcvgnw",
-      authDomain: "nailproject-40022.firebaseapp.com",
-      projectId: "nailproject-40022",
-      storageBucket: "nailproject-40022.firebasestorage.app",
-      messagingSenderId: "1004628981925",
-      appId: "1:1004628981925:web:db01ede0c09f4071d5754c"
-    };
+const firebaseConfig = {
+ apiKey: YOUR_FIREBASE_API_KEY,
+ authDomain: YOUR_FIREBASE_AUTH_DOMAIN,
+ projectId: YOUR_FIREBASE_PROJECT_ID,
+};
+if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.firestore();
+const appId = 'nail-inventory-app';
+const adminUserId = 'MvkJo5e1kEcBS0fGGMr4RKdQjYg1';
 
-    if (!firebase.apps.length) { firebase.initializeApp(firebaseConfig); }
-    const db = firebase.firestore();
-    const auth = firebase.auth();
-    
-    const adminUserId = "MvkJo5e1kEcBS0fGGMr4RKdQjYg1"; 
-    const appId = 'nail-inventory-app';
+function Shop() {
+ const [products, setProducts] = useState([]);
+ const [cart, setCart] = useState([]);
+ const [isCartOpen, setIsCartOpen] = useState(false);
+ const [isCheckingOut, setIsCheckingOut] = useState(false);
+ const [selectedProduct, setSelectedProduct] = useState(null);
+ const [modalSize, setModalSize] = useState('');
+ const [modalQty, setModalQty] = useState(1);
+ const [user, setUser] = useState(null);
+ const [customerName, setCustomerName] = useState('');
+ const [customerPhone, setCustomerPhone] = useState('');
+ const [shippingAddress, setShippingAddress] = useState('');
+ const [shippingLogisticsType, setShippingLogisticsType] = useState('');
+ const [isCod, setIsCod] = useState(false);
+ const [orders, setOrders] = useState([]);
+ const [viewMode, setViewMode] = useState('shop');
 
-    const SHIPPING_FEE = 65;              
-    const FREE_SHIPPING_THRESHOLD = 1000; 
-    
-    const PROMO_CODES = {
-      'VIP9': { type: 'percent', value: 0.9, name: 'VIP 專屬 9 折' },
-      'SAVE100': { type: 'minus', value: 100, name: '滿額現折 100 元' },
-      'NEWOPEN': { type: 'percent', value: 0.85, name: '歡慶開幕 85 折' },
-      'KOL_VIOLA': { type: 'percent', value: 0.95, name: 'Viola 粉絲專屬 95 折' } 
-    };
+ useEffect(() => {
+ const unsub = auth.onAuthStateChanged((u) => {
+ setUser(u);
+ if (u) {
+ if (!customerName) setCustomerName(u.displayName ; '');
+ fetchUserOrders(u.uid);
+ }
+ });
+ return () => unsub();
+ }, [customerName]);
 
-    const NAIL_SHAPES = ['全部', '短橢圓', '中橢圓', '長橢圓', '細狗尖', '杏仁甲', '短圓', '新中方', '短梯', '中梯', '長梯', '超長梯', '長水滴'];
+ const fetchProducts = async () => {
+ const snapshot = await db.collection('artifacts').doc(appId).collection('users').doc(adminUserId).collection('inventory').get();
+ setProducts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+ };
 
-    const { useState, useEffect, useMemo } = React;
+ const fetchUserOrders = (uid) => {
+ return db.collection('artifacts').doc(appId).collection('users').doc(uid).collection('orders')
+ .orderBy('createdAt', 'desc')
+ .onSnapshot((snapshot) => {
+ setOrders(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+ });
+ };
 
-    const ProductCard = ({ product, onClick }) => {
-      const [mediaIndex, setMediaIndex] = useState(0);
+ useEffect(() => { fetchProducts(); }, []);
 
-      useEffect(() => {
-        let interval;
-        if (product.media && product.media.length > 1) {
-          interval = setInterval(() => {
-            setMediaIndex(prev => (prev + 1) % product.media.length);
-          }, 800);
-        }
-        return () => clearInterval(interval);
-      }, [product.media]);
+ const addToCart = () => {
+ if (!selectedProduct || !modalSize) { alert('請選擇商品與尺寸'); return; }
+ setCart((prev) => {
+ const existed = prev.find((item) => item.id === selectedProduct.id ; item.size === modalSize);
+ if (existed) return prev.map((item) => item === existed ? { ...item, quantity: item.quantity + modalQty } : item);
+ return [...prev, { ...selectedProduct, size: modalSize, quantity: modalQty }];
+ });
+ setSelectedProduct(null);
+ setIsCartOpen(true);
+ };
 
-      return (
-        <div 
-          onClick={() => onClick(product)}
-          className="group bg-white p-3 md:p-4 rounded-[2.5rem] shadow-sm hover:shadow-2xl transition-all duration-500 border border-gray-100 flex flex-col h-full cursor-pointer overflow-hidden relative"
-        >
-          <div className="aspect-[4/5] rounded-[2rem] overflow-hidden bg-gray-50 mb-4 relative flex-shrink-0">
-            {product.media && product.media.length > 0 ? (
-              product.media.map((m, idx) => (
-                m.type === 'video' ? (
-                   <video key={idx} src={m.url} className={`absolute inset-0 w-full h-full object-cover fade-media group-hover:scale-110 ${mediaIndex === idx ? 'opacity-100 z-10' : 'opacity-0 z-0'}`} autoPlay muted loop playsInline />
-                ) : (
-                   <img key={idx} src={m.url} className={`absolute inset-0 w-full h-full object-cover fade-media group-hover:scale-110 ${mediaIndex === idx ? 'opacity-100 z-10' : 'opacity-0 z-0'}`} loading="lazy" />
-                )
-              ))
-            ) : (
-               <div className="absolute inset-0 flex items-center justify-center text-gray-300 font-bold text-sm">IMAGE SOON</div>
-            )}
-            
-            {product.shape && <span className="absolute top-4 left-4 z-20 bg-white/90 backdrop-blur-md text-[10px] md:text-xs font-black px-4 py-1.5 rounded-full shadow-sm text-pink-600 tracking-wider">{product.shape}</span>}
-            
-            <div className="absolute inset-0 z-30 bg-black/10 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity duration-300">
-               <span className="bg-white/95 backdrop-blur-md text-gray-900 text-xs font-black px-6 py-3 rounded-full shadow-2xl transform translate-y-4 group-hover:translate-y-0 transition-all duration-300 tracking-widest">VIEW DETAILS 🔍</span>
-            </div>
-          </div>
-          
-          <div className="px-2 flex-1 flex flex-col text-center pb-2">
-            <h3 className="font-black text-gray-900 text-base md:text-lg mb-1 truncate tracking-tighter">{product.name}</h3>
-            <p className="text-pink-600 font-black text-sm md:text-base mt-1">NT$ {product.price}</p>
-            <div className="mt-2 flex flex-wrap justify-center gap-1 text-[9px]">
-              {['XS','S','M','L'].map(size => {
-                const inStock = product.stock?.[size] > 0;
-                return (
-                  <span key={size} className={`px-2 py-1 rounded-full font-black ${inStock ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'}`}>
-                    {size}{inStock ? '有貨' : '缺貨'}
-                  </span>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      );
-    };
+ const removeFromCart = (index) => setCart((prev) => prev.filter((_, i) => i !== index));
 
-    function Shop() {
-      const [products, setProducts] = useState([]);
-      const [visibleCount, setVisibleCount] = useState(8); 
-      const [selectedShape, setSelectedShape] = useState('全部');
-      const [cart, setCart] = useState([]);
-      const [isCartOpen, setIsCartOpen] = useState(false);
-      const [isLoading, setIsLoading] = useState(true);
-      const [isCheckingOut, setIsCheckingOut] = useState(false);
-      
-      const [selectedProduct, setSelectedProduct] = useState(null);
-      const [modalSize, setModalSize] = useState('');
-      const [modalQty, setModalQty] = useState(1);
-      const [fullScreenImage, setFullScreenImage] = useState(null);
+ const cartSubtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+ const shippingFee = cartSubtotal >= 1000 ? 0 : 65;
+ const total = cartSubtotal + shippingFee;
 
-      const [user, setUser] = useState(null);
-      const [viewMode, setViewMode] = useState('shop'); 
-      const [userOrders, setUserOrders] = useState([]);
-      const [showScrollTop, setShowScrollTop] = useState(false);
+ const handleCheckout = async () => {
+ if (!customerName || !customerPhone || !shippingAddress) { alert('請填寫收件人資訊與門市'); return; }
+ if (!cart.length) { alert('購物車是空的'); return; }
+ setIsCheckingOut(true);
 
-      const [promoInput, setPromoInput] = useState('');
-      const [appliedPromo, setAppliedPromo] = useState(null);
-      const [paymentMethod, setPaymentMethod] = useState('ALL');
-      const [isCod, setIsCod] = useState(false);
-      const [customerName, setCustomerName] = useState('');
-      const [customerPhone, setCustomerPhone] = useState('');
-      const [shippingAddress, setShippingAddress] = useState('');
-      const [shippingLogisticsType, setShippingLogisticsType] = useState('');
-      const [isGuideOpen, setIsGuideOpen] = useState(false);
+ const orderId = ORD;
+ const codNote = isCod ? '貨到付款' : '一般付款';
+ const orderData = {
+ orderId,
+ items: cart.map(item => ({ id: item.id, name: item.name, size: item.size, quantity: item.quantity, price: item.price })),
+ totalAmount: total,
+ customerInfo: { name: customerName, phone: customerPhone, address: shippingAddress },
+ promoCode: null,
+ status: 'pending',
+ paymentMethod: 'ALL',
+ isCod,
+ codNote,
+ logisticsType: shippingLogisticsType,
+ createdAt: new Date().toISOString()
+ };
 
-      useEffect(() => {
-        const unsubscribe = auth.onAuthStateChanged((currentUser) => {
-          setUser(currentUser);
-          if (currentUser) {
-            if(!customerName) setCustomerName(currentUser.displayName || '');
-            fetchUserOrders(currentUser.uid);
-          }
-        });
-        return () => unsubscribe();
-      }, []);
+ if (user) {
+ await db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('orders').doc(orderId).set(orderData);
+ }
 
-      useEffect(() => {
-        if(!adminUserId) return;
-        const inventoryRef = db.collection('artifacts').doc(appId).collection('users').doc(adminUserId).collection('inventory');
-        const unsubscribe = inventoryRef.onSnapshot((snapshot) => {
-          const dbData = snapshot.docs.map(doc => ({ ...doc.data(), docId: doc.id }));
-          dbData.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-          setProducts(dbData);
-          setIsLoading(false);
-          const preloader = document.querySelector('.preloader');
-          if (preloader) {
-            preloader.style.opacity = '0';
-            setTimeout(() => preloader.style.display = 'none', 500);
-          }
-        }, (error) => {
-          console.error('inventory onSnapshot error', error);
-          setIsLoading(false);
-          const preloader = document.querySelector('.preloader');
-          if (preloader) {
-            preloader.style.opacity = '0';
-            setTimeout(() => preloader.style.display = 'none', 500);
-          }
-        });
+ try {
+ const response = await fetch('/api/ecpay', {
+ method: 'POST',
+ headers: { 'Content-Type': 'application/json' },
+ body: JSON.stringify({ ...orderData })
+ });
+ if (!response.ok) throw new Error('綠界連線失敗');
+ const html = await response.text();
+ document.open(); document.write(html); document.close();
+ } catch (e) {
+ console.error(e);
+ alert('結帳連線失敗，訂單已儲存，可在 我的訂單 查看');
+ setViewMode('orders');
+ } finally {
+ setIsCheckingOut(false);
+ }
+ };
 
-        return () => unsubscribe();
-      }, []);
+ const renderOrders = () => (
+ <div className='p-6'>
+ <h2 className='text-xl font-black mb-4'>我的訂單</h2>
+ {orders.length === 0 ? <div>暂无订单</div> : orders.map((order) => (
+ <div key={order.orderId} className='mb-3 p-3 border rounded-lg'>
+ <div className='flex justify-between'><strong>{order.orderId}</strong><span className='text-xs'>{order.status}</span></div>
+ <div className='text-xs'>總價：NT$ {order.totalAmount}</div>
+ <div className='text-xs'>COD：{order.isCod ? '是' : '否'}</div>
+ {order.codNote ; <div className='text-xs text-pink-600'>{order.codNote}</div>}
+ </div>
+ ))}
+ <button className='mt-4 px-4 py-2 bg-gray-800 text-white rounded' onClick={() => setViewMode('shop')}>回購物</button>
+ </div>
+ );
 
-      useEffect(() => {
-        const preloader = document.querySelector('.preloader');
-        if (preloader) {
-          preloader.style.opacity = '0';
-          setTimeout(() => preloader.style.display = 'none', 500);
-        }
+ return (
+ <div className='min-h-screen bg-gray-100'>
+ <header className='bg-white p-4 shadow sticky top-0 flex justify-between items-center'>
+ <h1 className='font-black'>指尖造藝</h1>
+ <div className='flex gap-2'>
+ <button className='text-sm border px-3 py-1 rounded' onClick={() => setViewMode('shop')}>商品</button>
+ <button className='text-sm border px-3 py-1 rounded' onClick={() => setViewMode('orders')}>我的訂單</button>
+ <button className='text-sm border px-3 py-1 rounded' onClick={() => setIsCartOpen(true)}>購物車 ({cart.length})</button>
+ </div>
+ </header>
 
-        const fallbackTimer = setTimeout(() => {
-          if (isLoading) {
-            setIsLoading(false);
-          }
-          const preloader2 = document.querySelector('.preloader');
-          if (preloader2) {
-            preloader2.style.opacity = '0';
-            setTimeout(() => preloader2.style.display = 'none', 500);
-          }
-        }, 8000);
+ <main className='p-4'>
+ {viewMode === 'orders' ? renderOrders() : (
+ <div className='grid grid-cols-1 md:grid-cols-3 gap-4'>
+ {products.map((p) => (
+ <div key={p.id} className='bg-white shadow rounded p-4'>
+ <h3 className='font-bold'>{p.name}</h3>
+ <div className='text-pink-500'>NT$ {p.price}</div>
+ <div className='mt-2 text-xs mb-2'>{p.description ; '手工藝術光療甲'}</div>
+ <button onClick={() => { setSelectedProduct(p); setModalSize('XS'); setModalQty(1); setIsCartOpen(true); }} className='mt-2 bg-pink-500 text-white px-3 py-1 rounded'>加入購物車</button>
+ </div>
+ ))}
+ </div>
+ )}
+ </main>
 
-        const handleScroll = () => setShowScrollTop(window.scrollY > 400);
-        window.addEventListener('scroll', handleScroll);
+ {isCartOpen ; (
+ <div className='fixed inset-0 bg-black/30 z-50 flex justify-end'>
+ <div className='w-full md:w-96 bg-white h-full overflow-y-auto p-4'>
+ <button onClick={() => setIsCartOpen(false)} className='mb-3 text-sm'>關閉</button>
+ <h2 className='text-lg font-black'>購物車</h2>
+ {cart.length === 0 ? <p className='text-sm mt-3'>購物車空空如也</p> : (
+ <div className='space-y-3 mt-3'>
+ {cart.map((item, idx) => (
+ <div key={idx} className='border p-2 rounded'>
+ <div>{item.name} ({item.size}) x{item.quantity}</div>
+ <div className='text-sm'>NT$ {item.price * item.quantity}</div>
+ <button className='text-red-500 text-xs' onClick={() => removeFromCart(idx)}>刪除</button>
+ </div>
+ ))}
+ </div>
+ )}
 
-        return () => {
-          clearTimeout(fallbackTimer);
-          window.removeEventListener('scroll', handleScroll);
-        };
-      }, [isLoading]);
+ <div className='mt-4'>
+ <h3 className='font-bold text-sm'>收件資訊</h3>
+ <input value={customerName} onChange={e => setCustomerName(e.target.value)} className='w-full border rounded px-2 py-2 mt-2' placeholder='收件人姓名' />
+ <input value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} className='w-full border rounded px-2 py-2 mt-2' placeholder='手機號碼' />
+ <input value={shippingAddress} onChange={e => setShippingAddress(e.target.value)} className='w-full border rounded px-2 py-2 mt-2' placeholder='取件地址 / 門市資訊' />
+ </div>
 
-      // 💡 超商地圖監聽器：當 map-reply.js 回傳 postMessage 時，更新地址
-      useEffect(() => {
-        const handleMessage = (event) => {
-          // 在實際部署時，建議檢查 event.origin 以增強安全性
-          if (event.data && event.data.type === 'ECPAY_MAP_RESULT') {
-            const { storeName, storeAddress } = event.data;
-            setShippingAddress(`[${storeName}] ${storeAddress}`);
-          }
-        };
-        window.addEventListener('message', handleMessage);
-        return () => window.removeEventListener('message', handleMessage);
-      }, []);
+ <div className='mt-4'>
+ <label className='inline-flex items-center gap-2 text-sm'>
+ <input type='checkbox' checked={isCod} onChange={e => setIsCod(e.target.checked)} className='w-4 h-4' />
+ 貨到付款
+ </label>
+ </div>
 
-      const handleLogin = async () => {
-        const provider = new firebase.auth.GoogleAuthProvider();
-        try { await auth.signInWithPopup(provider); } catch (error) { console.error("Login failed", error); }
-      };
+ <div className='mt-4 text-sm'>
+ <div>小計：NT$ {cartSubtotal}</div>
+ <div>運費：NT$ {shippingFee}</div>
+ <div className='font-black'>總計：NT$ {total}</div>
+ </div>
 
-      const handleLogout = () => { auth.signOut(); setViewMode('shop'); };
+ <button disabled={isCheckingOut} onClick={handleCheckout} className='w-full mt-4 bg-green-600 text-white py-2 rounded'>
+ {isCheckingOut ? '結帳中...' : '到綠界結帳'}
+ </button>
+ </div>
+ </div>
+ )}
+ </div>
+ );
+}
 
-      const fetchUserOrders = (uid) => {
-        db.collection('artifacts').doc(appId).collection('users').doc(uid).collection('orders')
-          .orderBy('createdAt', 'desc').limit(20)
-          .onSnapshot(snapshot => {
-            const orders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            setUserOrders(orders);
-          });
-      };
-
-      const scrollToTop = () => window.scrollTo({ top: 0, behavior: 'smooth' });
-
-      const filteredProducts = useMemo(() => {
-        if (selectedShape === '全部') return products;
-        return products.filter(p => p.shape === selectedShape);
-      }, [products, selectedShape]);
-
-      const handleShapeChange = (shape) => {
-        setSelectedShape(shape);
-        setVisibleCount(8);
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-      };
-
-      const openProductModal = (product) => {
-        setSelectedProduct(product);
-        setModalSize('');
-        setModalQty(1);
-      };
-
-      const handleAddToCart = () => {
-        if (!modalSize) { alert('請先選擇尺寸哦！'); return; }
-        setCart(prev => {
-          const existing = prev.find(item => item.id === selectedProduct.id && item.size === modalSize);
-          if (existing) {
-            return prev.map(item => item === existing ? { ...item, quantity: item.quantity + modalQty } : item);
-          }
-          return [...prev, { ...selectedProduct, size: modalSize, quantity: modalQty }];
-        });
-        setSelectedProduct(null); 
-        setIsCartOpen(true);      
-      };
-
-      const removeFromCart = (index) => setCart(prev => prev.filter((_, i) => i !== index));
-
-      const cartSubtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-      const currentShippingFee = (cartSubtotal === 0 || cartSubtotal >= FREE_SHIPPING_THRESHOLD) ? 0 : SHIPPING_FEE;
-      const isFreeShipping = currentShippingFee === 0 && cartSubtotal > 0;
-      let promoDiscountAmount = 0;
-
-      if (appliedPromo && cartSubtotal > 0) {
-        if (appliedPromo.type === 'percent') { promoDiscountAmount = Math.round(cartSubtotal * (1 - appliedPromo.value)); } 
-        else if (appliedPromo.type === 'minus') { promoDiscountAmount = appliedPromo.value; }
-      }
-      if (cartSubtotal - promoDiscountAmount < 0) promoDiscountAmount = cartSubtotal;
-
-      const finalTotal = cartSubtotal - promoDiscountAmount + currentShippingFee;
-
-      const handleApplyPromo = () => {
-        const code = promoInput.toUpperCase().trim();
-        if (PROMO_CODES[code]) {
-          setAppliedPromo({ ...PROMO_CODES[code], code });
-          setPromoInput('');
-        } else {
-          alert('❌ 無效的折扣碼或已過期');
-        }
-      };
-
-      const handleCheckout = async () => {
-        if (!customerName || !customerPhone || !shippingAddress) { alert('請填寫完整資訊並選擇取件門市！'); return; }
-        setIsCheckingOut(true);
-        try {
-          const orderItems = cart.map(item => ({
-            id: item.id,
-            name: item.name,
-            size: item.size,
-            quantity: item.quantity,
-            price: item.price
-          }));
-
-          const orderId = `ORD${Date.now()}`;
-          const codNote = isCod ? '貨到付款' : '一般付款';
-          const effectivePaymentMethod = 'ALL';
-
-          const orderData = {
-            orderId,
-            items: orderItems,
-            totalAmount: finalTotal,
-            customerInfo: { name: customerName, phone: customerPhone, address: shippingAddress },
-            promoCode: appliedPromo ? appliedPromo.code : null,
-            status: 'pending',
-            paymentMethod: effectivePaymentMethod,
-            isCod,
-            codNote,
-            logisticsType: shippingLogisticsType,
-            createdAt: new Date().toISOString()
-          };
-
-          if (user) {
-            await db.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('orders').doc(orderId).set(orderData);
-          }
-
-          const response = await fetch('/api/ecpay', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              ...orderData,
-              paymentMethod: effectivePaymentMethod,
-              logisticsType: shippingLogisticsType,
-              isCod,
-              codNote
-            })
-          });
-          
-          if (!response.ok) throw new Error('結帳連線失敗');
-          const html = await response.text();
-          document.open(); document.write(html); document.close();
-
-        } catch(e) {
-          console.error(e);
-          alert('【系統提示】訂單已暫存，請至「我的訂單」查看詳情。');
-          setCart([]); setIsCartOpen(false); setViewMode('orders'); setIsCheckingOut(false);
-        }
-      };
-
-      const handleResumeCheckout = async (order) => {
-        try {
-          const response = await fetch('/api/ecpay', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-              orderId: order.orderId,
-              items: order.items,
-              promoCode: order.promoCode,
-              paymentMethod: order.paymentMethod || 'ALL',
-              customerInfo: order.customerInfo,
-              total: order.totalAmount,
-              isCod: order.isCod || false,
-              codNote: order.codNote || ''
-            }) 
-          });
-          if (!response.ok) throw new Error('結帳連線失敗');
-          const html = await response.text();
-          document.open(); document.write(html); document.close();
-        } catch(e) {
-          console.error(e);
-          alert('無法重新發起支付，請稍後再試。');
-        }
-      };
-
-      const getStatusBadge = (status) => {
-        switch(status) {
-          case 'pending': return <span className="bg-amber-100 text-amber-700 text-xs px-3 py-1 rounded-full font-bold">⏳ 待付款</span>;
-          case 'paid': return <span className="bg-blue-100 text-blue-700 text-xs px-3 py-1 rounded-full font-bold">✅ 已付款</span>;
-          case 'processing': return <span className="bg-purple-100 text-purple-700 text-xs px-3 py-1 rounded-full font-bold">💅 製作中</span>;
-          case 'shipped': return <span className="bg-green-100 text-green-700 text-xs px-3 py-1 rounded-full font-bold">🚚 已出貨</span>;
-          default: return <span className="bg-gray-100 text-gray-700 text-xs px-3 py-1 rounded-full font-bold">{status}</span>;
-        }
-      };
-
-      return (
-        <div className="min-h-screen relative pb-20">
-          {/* Top Banner */}
-          <div className="bg-[#e8dad2] text-gray-800 text-[10px] md:text-xs py-2 px-5 flex justify-center font-black tracking-[0.2em] uppercase relative z-50">
-             Official Website | 手工訂製穿戴甲 
-          </div>
-
-          <header className="bg-white/90 backdrop-blur-xl sticky top-0 z-40 border-b border-gray-100/50 shadow-sm">
-            <div className="max-w-6xl mx-auto px-4 py-3 md:py-4 flex justify-between items-center">
-              <div className="flex items-center gap-3 cursor-pointer" onClick={() => setViewMode('shop')}>
-                <img 
-                  src="freepik__logo__19488.png" 
-                  onError={(e) => { e.target.onerror = null; e.target.src = 'https://ui-avatars.com/api/?name=Nails&background=FDF2F8&color=DB2777&rounded=true&bold=true'; }}
-                  alt="Logo" className="w-10 h-10 md:w-12 md:h-12 rounded-full object-cover border border-pink-100 shadow-sm" 
-                />
-                <h1 className="text-lg md:text-xl font-black tracking-tighter text-gray-900 hidden sm:block">指尖造藝 <span className="text-pink-500">.</span></h1>
-              </div>
-
-              <div className="flex items-center gap-2 md:gap-4">
-                <button onClick={() => setIsGuideOpen(true)} className="text-[11px] md:text-xs font-black text-gray-500 hover:text-pink-500 bg-gray-100/50 px-4 py-2 rounded-full border border-gray-100 transition-all">
-                  測量教學 📏
-                </button>
-
-                {user ? (
-                  <div className="relative group">
-                    <button className="flex items-center gap-2 bg-gray-50 hover:bg-gray-100 px-3 py-1.5 rounded-full border border-gray-100 transition-all">
-                      <img src={user.photoURL || 'https://ui-avatars.com/api/?name=U'} className="w-7 h-7 rounded-full shadow-sm" />
-                      <span className="text-xs font-black text-gray-700 hidden md:inline">{user.displayName?.split(' ')[0]}</span>
-                    </button>
-                    <div className="absolute right-0 mt-2 w-36 bg-white rounded-2xl shadow-2xl border border-gray-100 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 py-2">
-                      <button onClick={() => setViewMode('orders')} className="w-full text-left px-4 py-2.5 text-xs font-black text-gray-700 hover:text-pink-600 hover:bg-pink-50">📋 我的訂單</button>
-                      <button onClick={handleLogout} className="w-full text-left px-4 py-2.5 text-xs font-black text-gray-700 hover:text-red-600 hover:bg-red-50">登出</button>
-                    </div>
-                  </div>
-                ) : (
-                  <button onClick={handleLogin} className="text-[11px] md:text-xs font-black text-white bg-gray-900 px-5 py-2 rounded-full hover:bg-pink-600 transition-all shadow-lg">
-                    登入 / 註冊
-                  </button>
-                )}
-
-                <button onClick={() => setIsCartOpen(true)} className="relative p-2 flex items-center gap-2 font-black text-gray-700 hover:text-pink-500 transition-colors bg-white rounded-full">
-                  <span className="text-xl">🛒</span> 
-                  {cart.length > 0 && <span className="absolute -top-1 -right-1 bg-pink-500 text-white text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center animate-bounce shadow-md">{cart.length}</span>}
-                </button>
-              </div>
-            </div>
-          </header>
-
-          {viewMode === 'shop' && (
-            <div className="sticky top-[60px] md:top-[76px] z-30 bg-white/90 backdrop-blur-xl shadow-sm border-b border-gray-100/50 py-3 px-4">
-              <div className="max-w-6xl mx-auto overflow-x-auto hide-scrollbar">
-                <div className="flex gap-2 w-max">
-                  {NAIL_SHAPES.map(shape => (
-                    <button
-                      key={shape}
-                      onClick={() => handleShapeChange(shape)}
-                      className={`px-5 py-2 rounded-full text-xs font-black whitespace-nowrap transition-all duration-300 ${
-                        selectedShape === shape ? 'bg-gray-900 text-white shadow-xl scale-105' : 'bg-white text-gray-500 border border-gray-100 hover:border-pink-200'
-                      }`}
-                    >
-                      {shape}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          <main className="max-w-6xl mx-auto px-4 py-10">
-            {viewMode === 'shop' ? (
-              isLoading ? <div className="text-center py-20 text-gray-300 font-black animate-pulse">LOADING COLLECTION...</div> : (
-                <>
-                  <div className="grid grid-cols-1 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-8">
-                    {filteredProducts.slice(0, visibleCount).map(product => (
-                      <ProductCard key={product.id} product={product} onClick={openProductModal} />
-                    ))}
-                  </div>
-                  {visibleCount < filteredProducts.length && (
-                    <div className="mt-16 flex justify-center">
-                      <button onClick={() => setVisibleCount(prev => prev + 8)} className="px-10 py-4 bg-white border border-gray-200 text-gray-900 rounded-full font-black shadow-sm hover:shadow-xl hover:border-pink-300 transition-all text-xs tracking-widest uppercase">Load More款式 👇</button>
-                    </div>
-                  )}
-                </>
-              )
-            ) : (
-              <div className="max-w-3xl mx-auto animate-fade-in-up">
-                 <h2 className="text-xl font-black text-gray-900 mb-8 flex items-center gap-4">
-                    <button onClick={() => setViewMode('shop')} className="text-gray-400 hover:text-pink-500 transition">← 返回</button> 
-                    我的訂單紀錄
-                 </h2>
-                 {userOrders.length === 0 ? <p className="text-center py-20 text-gray-400 font-black bg-white rounded-[2rem] shadow-sm border border-gray-100">尚無購買記錄 🥺</p> : (
-                   <div className="space-y-6">
-                     {userOrders.map(order => (
-                       <div key={order.id} className="bg-white rounded-[2rem] p-6 border border-gray-100 shadow-sm hover:shadow-md transition-all">
-                          <div className="flex justify-between items-start mb-4 pb-4 border-b border-gray-50">
-                             <div>
-                               <span className="text-[10px] text-gray-400 font-black block mb-1 uppercase">{new Date(order.createdAt).toLocaleString()}</span>
-                               <span className="text-xs font-black text-gray-700">ORD: {order.orderId}</span>
-                             </div>
-                             {getStatusBadge(order.status)}
-                          </div>
-                          
-                          <div className="space-y-2 mb-4">
-                            {order.items?.map((item, idx) => (
-                               <div key={idx} className="flex justify-between items-center text-xs font-black bg-gray-50/50 p-4 rounded-2xl">
-                                  <div>
-                                    <span className="text-gray-900 block mb-1">{item.name}</span>
-                                    <span className="text-[10px] text-gray-400">SIZE: {item.size} / QTY: {item.quantity}</span>
-                                  </div>
-                                  <span className="text-pink-600">NT$ {item.price * item.quantity}</span>
-                               </div>
-                            ))}
-                          </div>
-
-                          <div className="pt-4 border-t border-gray-50 flex justify-between items-end">
-                             <div className="text-[10px] text-gray-400 font-black">
-                               <p className="mb-1">📍 SHIPPING TO:</p>
-                               <p className="text-gray-700 max-w-[200px] truncate">{order.customerInfo?.address}</p>
-                             </div>
-                             <div className="text-right">
-                               <span className="text-[10px] text-gray-400 block mb-1 uppercase">Total</span>
-                               <span className="text-xl font-black text-pink-600">NT$ {order.totalAmount}</span>
-                             </div>
-                          </div>
-
-                          {order.status === 'pending' && (
-                             <div className="mt-6 pt-6 border-t border-gray-100">
-                                <button 
-                                  onClick={() => handleResumeCheckout(order)}
-                                  className="w-full bg-gray-900 text-white py-4 rounded-2xl font-black text-xs hover:bg-pink-600 transition-all shadow-xl tracking-widest uppercase"
-                                >
-                                  💳 訂單尚未付款，點此繼續支付
-                                </button>
-                             </div>
-                          )}
-                       </div>
-                     ))}
-                   </div>
-                 )}
-              </div>
-            )}
-          </main>
-
-          <button onClick={scrollToTop} className={`fixed bottom-8 right-8 z-40 bg-pink-500 text-white w-14 h-14 rounded-full shadow-2xl flex items-center justify-center text-xl transition-all duration-500 ${showScrollTop ? 'opacity-100 scale-100' : 'opacity-0 scale-0'}`}>🚀</button>
-
-          {/* Product Modal */}
-          {selectedProduct && (
-            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-              <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={() => setSelectedProduct(null)}></div>
-              <div className="bg-white rounded-[3rem] w-full max-w-4xl max-h-[90vh] overflow-hidden relative z-10 shadow-2xl flex flex-col md:flex-row animate-fade-in-up">
-                <button onClick={() => setSelectedProduct(null)} className="absolute top-6 right-6 w-10 h-10 flex items-center justify-center bg-white/90 backdrop-blur-md rounded-full font-black z-20 shadow-sm border border-gray-100">✕</button>
-                <div className="w-full md:w-1/2 h-80 md:h-auto bg-gray-50 flex overflow-x-auto snap-x snap-mandatory hide-scrollbar">
-                  {selectedProduct.media?.map((m, idx) => (
-                    <img key={idx} src={m.url} onClick={() => setFullScreenImage(m.url)} className="w-full flex-shrink-0 snap-center object-cover cursor-zoom-in" />
-                  ))}
-                </div>
-                <div className="w-full md:w-1/2 p-8 md:p-12 flex flex-col overflow-y-auto">
-                  <h2 className="text-2xl font-black text-gray-900 mb-2 leading-none">{selectedProduct.name}</h2>
-                  <p className="text-2xl font-black text-pink-600 mb-6 tracking-tighter">NT$ {selectedProduct.price}</p>
-                  <div className="mb-8 text-xs font-black text-gray-500 leading-relaxed bg-gray-50 p-6 rounded-3xl border border-gray-100">{selectedProduct.description || "手工客製化光療甲片，專業多層上色技術。"}</div>
-                  
-                  <div className="mb-10">
-                    <h3 className="font-black text-gray-900 text-sm mb-4 uppercase tracking-widest">Select Size</h3>
-                    <div className="grid grid-cols-4 gap-3">
-                      {['XS', 'S', 'M', 'L'].map(size => {
-                        const inStock = selectedProduct.stock?.[size] > 0;
-                        return (
-                          <button key={size} disabled={!inStock} onClick={() => setModalSize(size)} className={`py-4 rounded-2xl border-2 flex flex-col items-center justify-center transition-all ${modalSize === size ? 'border-pink-500 bg-pink-50 text-pink-600 shadow-lg scale-105' : 'border-gray-50 opacity-40 hover:border-pink-100'}`}>
-                            <span className="font-black text-base">{size}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                  <button onClick={handleAddToCart} className="mt-auto w-full bg-gray-900 text-white py-5 rounded-[2rem] font-black text-sm hover:bg-pink-600 transition-all shadow-2xl tracking-[0.2em] uppercase">Add to Cart 🛒</button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Cart Sidebar */}
-          {isCartOpen && (
-            <div className="fixed inset-0 z-[110] flex justify-end">
-              <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setIsCartOpen(false)}></div>
-              <div className="w-full max-w-md bg-white h-full relative flex flex-col shadow-2xl animate-fade-in-right rounded-l-[3rem]">
-                <div className="p-8 border-b border-gray-50 flex justify-between items-center">
-                  <h2 className="text-xl font-black tracking-tighter">購物車 🛍️</h2>
-                  <button onClick={() => setIsCartOpen(false)} className="w-10 h-10 flex items-center justify-center bg-gray-100 rounded-full font-black">✕</button>
-                </div>
-                <div className="flex-1 overflow-y-auto p-8 space-y-6">
-                  {cart.length === 0 ? <p className="text-center py-20 text-gray-300 font-black italic">YOUR BAG IS EMPTY</p> : (
-                    <>
-                      {cart.map((item, idx) => (
-                        <div key={idx} className="flex gap-5 pb-6 border-b border-gray-50">
-                          <img src={item.media?.[0]?.url} className="w-20 h-24 object-cover rounded-2xl shadow-sm" />
-                          <div className="flex-1">
-                            <div className="flex justify-between items-start">
-                              <h4 className="font-black text-xs text-gray-900 mb-1">{item.name}</h4>
-                              <button onClick={() => removeFromCart(idx)} className="text-red-400 text-[10px] font-black uppercase">Remove</button>
-                            </div>
-                            <span className="text-[10px] font-black text-gray-400 block mb-2 uppercase">SIZE: {item.size} / QTY: {item.quantity}</span>
-                            <span className="font-black text-pink-600 text-sm">NT$ {item.price * item.quantity}</span>
-                          </div>
-                        </div>
-                      ))}
-                      
-                      <div className="bg-gray-50 p-6 rounded-[2rem] border border-gray-100 space-y-4">
-                        <h3 className="font-black text-gray-900 text-xs uppercase tracking-widest border-b pb-2">Shipping Info</h3>
-                        <input type="text" placeholder="收件人真實姓名" value={customerName} onChange={e => setCustomerName(e.target.value)} className="w-full px-5 py-3.5 rounded-2xl border-none bg-white text-xs font-black shadow-sm" />
-                        <input type="tel" placeholder="收件人手機號碼" value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} className="w-full px-5 py-3.5 rounded-2xl border-none bg-white text-xs font-black shadow-sm" />
-                        
-                        <div className="space-y-2">
-                           <textarea placeholder="點擊下方按鈕選擇門市" value={shippingAddress} readOnly className="w-full px-5 py-3.5 rounded-2xl border-none bg-pink-50/50 text-pink-700 text-[11px] font-black h-20 shadow-inner resize-none"></textarea>
-                           <div className="grid grid-cols-2 gap-3">
-                              <button onClick={() => { setShippingLogisticsType('UNIMARTC2C'); window.open('/api/ecpay_map?logisticsType=UNIMARTC2C', 'ecpay_map', 'width=1000,height=700'); }} className="py-3 bg-white text-green-600 rounded-2xl text-[10px] font-black border border-green-100 shadow-sm hover:bg-green-50 transition-all uppercase">🏪 7-11 門市</button>
-                              <button onClick={() => { setShippingLogisticsType('FAMIC2C'); window.open('/api/ecpay_map?logisticsType=FAMIC2C', 'ecpay_map', 'width=1000,height=700'); }} className="py-3 bg-white text-blue-600 rounded-2xl text-[10px] font-black border border-blue-100 shadow-sm hover:bg-blue-50 transition-all uppercase">🏪 全家 門市</button>
-                           </div>
-                        </div>
-                      </div>
-
-                      <div className="bg-white p-4 rounded-2xl border border-gray-100 mt-4">
-                        <label className="inline-flex items-center gap-2 text-xs font-black text-gray-700">
-                          <input type="checkbox" checked={isCod} onChange={e => setIsCod(e.target.checked)} className="w-4 h-4 accent-pink-500" />
-                          貨到付款
-                        </label>
-                        <p className="text-[10px] text-gray-400 mt-1">勾選後訂單會註記 COD，結帳仍會跳綠界。</p>
-                      </div>
-
-                      <div className="bg-white p-4 rounded-3xl border border-gray-100 shadow-sm">
-                        <div className="flex gap-2">
-                           <input type="text" placeholder="折扣碼" value={promoInput} onChange={e => setPromoInput(e.target.value)} className="flex-1 px-5 py-3 rounded-2xl bg-gray-50 text-[10px] font-black uppercase" />
-                           <button onClick={handleApplyPromo} className="bg-gray-900 text-white px-6 py-3 rounded-2xl font-black text-[10px] uppercase">套用</button>
-                        </div>
-                        {appliedPromo && <div className="mt-2 text-[10px] font-black text-green-600 px-2">✅ 已套用：{appliedPromo.name}</div>}
-                      </div>
-                    </>
-                  )}
-                </div>
-                
-                <div className="p-8 bg-gray-50/50 border-t border-gray-50 rounded-b-[3rem]">
-                  <div className="space-y-2 mb-8 text-[11px] font-black text-gray-400 uppercase tracking-widest">
-                    <div className="flex justify-between"><span>商品小計</span><span className="text-gray-900">NT$ {cartSubtotal}</span></div>
-                    {promoDiscountAmount > 0 && <div className="flex justify-between text-pink-500"><span>折扣</span><span>- NT$ {promoDiscountAmount}</span></div>}
-                    <div className="flex justify-between"><span>運費</span><span className="text-gray-900">{isFreeShipping ? '免運' : `NT$ ${currentShippingFee}`}</span></div>
-                    <div className="flex justify-between items-center pt-4 border-t border-gray-100 mt-2"><span className="text-gray-900 text-sm font-black">總金額</span><span className="text-3xl font-black text-pink-600 tracking-tighter">NT$ {finalTotal}</span></div>
-                  </div>
-                  <button disabled={cart.length === 0 || isCheckingOut} onClick={handleCheckout} className="w-full bg-gray-900 text-white py-5 rounded-3xl font-black text-sm hover:bg-pink-600 disabled:opacity-50 shadow-2xl transition-all tracking-[0.3em] uppercase">
-                    {isCheckingOut ? '處理中...' : '立即結帳'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* 📏 恢復：詳細教學 Modal (測量/尺寸細節/製作流程) */}
-          {isGuideOpen && (
-            <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
-              <div className="absolute inset-0 bg-black/70 backdrop-blur-md" onClick={() => setIsGuideOpen(false)}></div>
-              <div className="bg-white rounded-[3rem] w-full max-w-3xl max-h-[85vh] overflow-y-auto relative z-10 shadow-2xl p-8 md:p-12 animate-fade-in-up custom-scroll">
-                <button onClick={() => setIsGuideOpen(false)} className="absolute top-8 right-8 w-12 h-12 flex items-center justify-center bg-gray-100 rounded-full font-black hover:bg-pink-500 hover:text-white transition-all">✕</button>
-                
-                {/* 1. 測量與尺寸對照表 */}
-                <h2 className="text-2xl font-black mb-8 text-gray-900 border-b-4 border-pink-100 pb-4 inline-block">📏 尺寸測量與詳細對照</h2>
-                <div className="space-y-8 mb-12">
-                   <div className="bg-pink-50/50 p-8 rounded-[2.5rem] border border-pink-100 text-xs font-black leading-relaxed">
-                      <p className="text-pink-600 mb-4 text-sm font-black">如何正確測量？</p>
-                      <ul className="list-decimal ml-5 space-y-3 text-gray-600">
-                        <li>拿出一捲<span className="text-pink-600">軟尺</span>，平貼於指甲表面「最寬處」的弧度。</li>
-                        <li>測量雙手十隻指頭（慣用手通常較大），記錄下各指公釐(mm)數值。</li>
-                        <li><span className="text-pink-600">💡 建議根據實際尺寸選擇：</span>若數值介於中間，建議可先測量正確數值後再選擇，若甲片硬且不易磨，切勿過度擠壓，以免壓迫肉面。</li>
-                      </ul>
-                   </div>
-
-                   <div className="overflow-hidden rounded-3xl border border-gray-100 shadow-sm">
-                      <table className="w-full text-center text-xs">
-                        <thead>
-                           <tr className="bg-gray-900 text-white">
-                              <th className="py-4 font-black">尺碼</th>
-                              <th className="py-4 font-black">大拇指</th>
-                              <th className="py-4 font-black">食指</th>
-                              <th className="py-4 font-black">中指</th>
-                              <th className="py-4 font-black">無名指</th>
-                              <th className="py-4 font-black">小指</th>
-                           </tr>
-                        </thead>
-                        <tbody className="font-black text-gray-600">
-                           <tr className="bg-white border-b border-gray-50"><td className="py-4 bg-pink-50 text-pink-600">XS</td><td>14mm</td><td>10mm</td><td>11mm</td><td>10mm</td><td>7mm</td></tr>
-                           <tr className="bg-gray-50/50 border-b border-gray-50"><td className="py-4 bg-pink-50 text-pink-600">S</td><td>15mm</td><td>11mm</td><td>12mm</td><td>11mm</td><td>8mm</td></tr>
-                           <tr className="bg-white border-b border-gray-50"><td className="py-4 bg-pink-50 text-pink-600">M</td><td>16mm</td><td>12mm</td><td>13mm</td><td>12mm</td><td>9mm</td></tr>
-                           <tr className="bg-gray-50/50"><td className="py-4 bg-pink-50 text-pink-600">L</td><td>17mm</td><td>13mm</td><td>14mm</td><td>13mm</td><td>10mm</td></tr>
-                        </tbody>
-                      </table>
-                   </div>
-                </div>
-
-                {/* 2. 穿戴教學 */}
-                <h2 className="text-2xl font-black mb-8 text-gray-900 border-b-4 border-pink-100 pb-4 inline-block">✨ 穿戴與卸除</h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
-                   <div className="bg-white border border-gray-100 p-8 rounded-[2.5rem] shadow-sm">
-                      <h3 className="font-black text-pink-600 mb-5 text-sm flex items-center gap-2">💅 配戴 4 步驟</h3>
-                      <ul className="text-[11px] space-y-4 font-black text-gray-500">
-                        <li className="flex gap-4"><span className="bg-pink-100 text-pink-600 w-6 h-6 rounded-full flex items-center justify-center shrink-0">1</span> 輕磨甲面：去除指甲表面多餘油脂。</li>
-                        <li className="flex gap-4"><span className="bg-pink-100 text-pink-600 w-6 h-6 rounded-full flex items-center justify-center shrink-0">2</span> 酒精清潔：徹底去除粉塵。</li>
-                        <li className="flex gap-4"><span className="bg-pink-100 text-pink-600 w-6 h-6 rounded-full flex items-center justify-center shrink-0">3</span> 貼膠：選擇稍小於甲面的果凍膠。</li>
-                        <li className="flex gap-4"><span className="bg-pink-100 text-pink-600 w-6 h-6 rounded-full flex items-center justify-center shrink-0">4</span> 按壓：斜45度推入後用力按壓20秒。</li>
-                      </ul>
-                   </div>
-                   <div className="bg-white border border-gray-100 p-8 rounded-[2.5rem] shadow-sm">
-                      <h3 className="font-black text-gray-400 mb-5 text-sm flex items-center gap-2">🛁 溫和卸除</h3>
-                      <ul className="text-[11px] space-y-4 font-black text-gray-500">
-                        <li className="flex gap-4"><span className="bg-gray-100 text-gray-400 w-6 h-6 rounded-full flex items-center justify-center shrink-0">1</span> 浸泡：雙手浸泡溫水3-5分鐘。</li>
-                        <li className="flex gap-4"><span className="bg-gray-100 text-gray-400 w-6 h-6 rounded-full flex items-center justify-center shrink-0">2</span> 撬開：從邊緣輕輕撬開縫隙。</li>
-                        <li className="flex gap-4"><span className="bg-gray-100 text-gray-400 w-6 h-6 rounded-full flex items-center justify-center shrink-0">3</span> 輔助：利用內附木棒慢慢推開。</li>
-                        <li className="flex gap-4"><span className="bg-gray-100 text-gray-400 w-6 h-6 rounded-full flex items-center justify-center shrink-0">4</span> 保養：清除殘膠，甲片可重複使用。</li>
-                      </ul>
-                   </div>
-                </div>
-
-                {/* 3. 恢復製作流程 */}
-                <h2 className="text-2xl font-black mb-8 text-gray-900 border-b-4 border-pink-100 pb-4 inline-block">👩‍🎨 專業職人手工工序</h2>
-                <div className="bg-[#FAF9F8] p-8 rounded-[3rem] border border-gray-100 mb-6">
-                   <div className="flex flex-col gap-4 max-w-sm mx-auto">
-                      {[
-                        { num: '01', text: '甲片精細打磨去光', color: 'bg-gray-900' },
-                        { num: '02', text: '塗布專業吻合劑', color: 'bg-gray-800' },
-                        { num: '03', text: '進口品牌底膠固化', color: 'bg-pink-500' },
-                        { num: '04', text: '多層職人手繪/調色', color: 'bg-pink-400' },
-                        { num: '05', text: '專業飾品膠微雕/黏貼', color: 'bg-gray-800' },
-                        { num: '06', text: '加固封層二度保護', color: 'bg-pink-500' },
-                        { num: '07', text: '高耐磨鋼化封層完工', color: 'bg-gray-900' },
-                      ].map((step, idx) => (
-                        <div key={idx} className={`${step.color} text-white px-8 py-4 rounded-2xl shadow-xl flex items-center gap-6 transform hover:translate-x-2 transition-all duration-300`}>
-                          <span className="text-2xl font-black italic opacity-30 leading-none">{step.num}</span>
-                          <span className="text-xs font-black tracking-widest uppercase">{step.text}</span>
-                        </div>
-                      ))}
-                   </div>
-                   <div className="mt-12 text-center">
-                      <p className="text-[10px] text-gray-400 font-black tracking-[0.3em] uppercase leading-loose">
-                        Pure Handmade Artisan Nails<br/>
-                        媲美美甲店質感 · 十片手工光療訂製
-                      </p>
-                   </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          <style dangerouslySetInnerHTML={{__html: ` 
-            .animate-fade-in-right { animation: fadeInRight 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards; } 
-            @keyframes fadeInRight { from { opacity: 0; transform: translateX(100px); } to { opacity: 1; transform: translateX(0); } } 
-            .animate-fade-in-up { animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
-            @keyframes fadeInUp { from { opacity: 0; transform: translateY(40px); } to { opacity: 1; transform: translateY(0); } }
-            .custom-scroll::-webkit-scrollbar { width: 4px; }
-            .custom-scroll::-webkit-scrollbar-thumb { background: #FDE2E4; border-radius: 10px; }
-          `}} />
-        </div>
-      );
-    }
-
-    const root = ReactDOM.createRoot(document.getElementById('root'));
-    root.render(<Shop />);
-    
-    // Hide preloader
-    window.addEventListener('load', () => {
-      const preloader = document.querySelector('.preloader');
-      if(preloader) {
-        preloader.style.opacity = '0';
-        setTimeout(() => preloader.style.display = 'none', 500);
-      }
-    });
-  </script>
-</body>
-</html>
+ReactDOM.createRoot(document.getElementById('root')).render(<Shop />);
