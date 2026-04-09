@@ -84,7 +84,7 @@
       return await fileRef.getDownloadURL();
     };
 
-    // 甲型過濾組件 (加入 className 以支援外部排版微調)
+    // 甲型過濾組件
     const ShapeFilter = ({ activeShape, onShapeSelect, className = "" }) => {
       return (
         <div className={`flex overflow-x-auto gap-2 pb-2 mb-4 [&::-webkit-scrollbar]:hidden scroll-smooth ${className}`}>
@@ -356,7 +356,8 @@
         // 依照「匯入款式規範 - 工作表1.csv」的標準標題進行資料映射
         const exportData = displayInventory.map(item => {
           const sizes = ['XS', 'S', 'M', 'L'];
-          const specNames = sizes.join('\n'); // 換行呈現多個規格
+          // 透過換行符號整理多個規格，PapaParse 會自動加上雙引號包覆
+          const specNames = sizes.join('\n');
           const stocks = sizes.map(s => item.stock?.[s] || 0).join('\n');
           const prices = sizes.map(() => item.price || 390).join('\n');
           const imageUrls = item.media ? item.media.map(m => m.url).join(',') : '';
@@ -750,7 +751,7 @@
             </div>
           )}
 
-          {/* ===== 編輯款式視窗 (保留原功能) ===== */}
+          {/* ===== 編輯款式視窗 ===== */}
           {editingItem && (
             <div className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
               <div className="bg-white w-full max-w-xl rounded-[3rem] shadow-2xl animate-scale-in my-auto">
