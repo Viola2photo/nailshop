@@ -84,10 +84,10 @@
       return await fileRef.getDownloadURL();
     };
 
-    // 甲型過濾組件
-    const ShapeFilter = ({ activeShape, onShapeSelect }) => {
+    // 甲型過濾組件 (加入 className 以支援外部排版微調)
+    const ShapeFilter = ({ activeShape, onShapeSelect, className = "" }) => {
       return (
-        <div className="flex overflow-x-auto gap-2 pb-2 mb-4 [&::-webkit-scrollbar]:hidden scroll-smooth">
+        <div className={`flex overflow-x-auto gap-2 pb-2 mb-4 [&::-webkit-scrollbar]:hidden scroll-smooth ${className}`}>
           <button 
             onClick={() => onShapeSelect('All')} 
             className={`whitespace-nowrap px-5 py-2 rounded-full font-black text-xs transition-all flex-shrink-0 border ${activeShape === 'All' ? 'bg-gray-900 text-white border-gray-900 shadow-md' : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'}`}
@@ -121,15 +121,15 @@
       const [editingItem, setEditingItem] = useState(null);
       const editMediaRef = useRef(null);
       
-      // 新增：款式庫分類過濾
+      // 款式庫分類過濾
       const [inventoryShapeFilter, setInventoryShapeFilter] = useState('All');
       
-      // 新增：盤點相關狀態
+      // 盤點相關狀態
       const [scanQuery, setScanQuery] = useState('');
       const [scanShapeFilter, setScanShapeFilter] = useState('All');
       const [scanModalItem, setScanModalItem] = useState(null);
       const [scanModalStock, setScanModalStock] = useState({ XS: 0, S: 0, M: 0, L: 0 });
-      const [pendingScans, setPendingScans] = useState({}); // 儲存尚未上傳的盤點結果 { id: { XS, S, M, L } }
+      const [pendingScans, setPendingScans] = useState({});
 
       const showToast = (message, type = 'success') => setToastMsg({ message, type });
 
@@ -300,7 +300,6 @@
       // 盤點相關處理函數
       const openScanModal = (item) => {
         setScanModalItem(item);
-        // 如果有暫存的盤點資料，就帶入暫存資料；否則帶入原本庫存
         setScanModalStock(pendingScans[item.id] || { ...item.stock });
       };
 
@@ -324,7 +323,7 @@
             batch.update(docRef, { stock: pendingScans[id] });
           });
           await batch.commit();
-          setPendingScans({}); // 清空暫存
+          setPendingScans({});
           showToast(`成功更新 ${pendingIds.length} 筆盤點資料至雲端！`, 'success');
         } catch (error) {
           console.error(error);
@@ -346,6 +345,52 @@
           return matchQuery && matchShape;
         });
       }, [inventory, scanQuery, scanShapeFilter]);
+
+      // ========== 新增：匯出符合匯入規範的 CSV ==========
+      const handleExportCSV = () => {
+        if (displayInventory.length === 0) {
+          showToast("目前沒有資料可匯出", "error");
+          return;
+        }
+
+        // 將資料轉換為符合匯入規範的欄位格式
+        const exportData = displayInventory.map(item => ({
+          '款式名稱': item.name || '',
+          '價格': item.price || 390,
+          '趨勢風格描述 (50字內)': item.description || '',
+          '甲型': item.shape || '',
+          '流行熱搜標籤 (#)': item.hashtags || '',
+          'XS': item.stock?.XS || 0,
+          'S': item.stock?.S || 0,
+          'M': item.stock?.M || 0,
+          'L': item.stock?.L || 0
+        }));
+
+        // 將 JSON 資料轉為 CSV 字串
+        const csv = Papa.unparse(exportData);
+        // 加上 BOM \uFEFF，確保 Excel 打開時不會有中文亂碼
+        const csvWithBOM = "\uFEFF" + csv;
+        
+        // 建立 Blob 與動態下載連結
+        const blob = new Blob([csvWithBOM], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.setAttribute("href", url);
+        
+        // 格式化當天日期，產生檔案名稱
+        const dateStr = new Date().toLocaleDateString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '');
+        const fileName = inventoryShapeFilter === 'All' ? `全部款式庫存_${dateStr}.csv` : `${inventoryShapeFilter}庫存_${dateStr}.csv`;
+        
+        link.setAttribute("download", fileName);
+        document.body.appendChild(link);
+        link.click();
+        
+        // 清理資源
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        
+        showToast(`成功匯出 ${displayInventory.length} 筆報表`, 'success');
+      };
 
       return (
         <div className="min-h-screen bg-[#F8F9FA] pb-24 text-gray-800">
@@ -391,7 +436,18 @@
               {/* ===== 款式庫分頁 ===== */}
               {activeTab === 'inventory' && (
                 <div>
-                  <ShapeFilter activeShape={inventoryShapeFilter} onShapeSelect={setInventoryShapeFilter} />
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <div className="flex-1 overflow-hidden w-full">
+                       <ShapeFilter activeShape={inventoryShapeFilter} onShapeSelect={setInventoryShapeFilter} className="!mb-4" />
+                    </div>
+                    {/* 新增的匯出 CSV 按鈕 */}
+                    <button 
+                      onClick={handleExportCSV} 
+                      className="flex-shrink-0 bg-green-50 text-green-600 border border-green-200 hover:bg-green-600 hover:text-white px-4 py-2 rounded-full font-black text-xs shadow-sm transition-all flex items-center gap-1 whitespace-nowrap"
+                    >
+                      <span className="text-sm">📥</span> <span className="hidden sm:inline">匯出報表</span>
+                    </button>
+                  </div>
                   
                   {isLoadingDB ? (
                     <div className="flex flex-col items-center py-20 animate-pulse">
