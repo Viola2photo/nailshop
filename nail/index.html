@@ -346,25 +346,56 @@
         });
       }, [inventory, scanQuery, scanShapeFilter]);
 
-      // ========== 新增：匯出符合匯入規範的 CSV ==========
+      // ========== 修改：匯出符合商城匯入規範的 CSV ==========
       const handleExportCSV = () => {
         if (displayInventory.length === 0) {
           showToast("目前沒有資料可匯出", "error");
           return;
         }
 
-        // 將資料轉換為符合匯入規範的欄位格式
-        const exportData = displayInventory.map(item => ({
-          '款式名稱': item.name || '',
-          '價格': item.price || 390,
-          '趨勢風格描述 (50字內)': item.description || '',
-          '甲型': item.shape || '',
-          '流行熱搜標籤 (#)': item.hashtags || '',
-          'XS': item.stock?.XS || 0,
-          'S': item.stock?.S || 0,
-          'M': item.stock?.M || 0,
-          'L': item.stock?.L || 0
-        }));
+        // 依照「匯入款式規範 - 工作表1.csv」的標準標題進行資料映射
+        const exportData = displayInventory.map(item => {
+          const sizes = ['XS', 'S', 'M', 'L'];
+          const specNames = sizes.join('\n'); // 換行呈現多個規格
+          const stocks = sizes.map(s => item.stock?.[s] || 0).join('\n');
+          const prices = sizes.map(() => item.price || 390).join('\n');
+          const imageUrls = item.media ? item.media.map(m => m.url).join(',') : '';
+
+          return {
+            '商品名稱(必填)': item.name || '未命名款式',
+            '商品規格類型(填入規格類型名稱，多個類型用換行分隔，例：顏色。留空則自動命名為規格1、規格2...)': '尺寸',
+            '商品規格名稱(填寫規格組合，多規格以/分隔，例：紅色/S。每行一個規格組合，只產生有填寫的規格)': specNames,
+            '商品類型(若為票券商品請填T，預約商品請填B，一般商品請留空)': '',
+            '商品貨號': item.id || '',
+            '商品條碼(英文與數字)': '',
+            '商品成本(NT.)': '',
+            '商品售價(NT.)(必填)': prices,
+            '商品特價(NT.)': '',
+            '倉位編號': '',
+            '商品庫存(必填)': stocks,
+            '安全庫存': '',
+            '商品所有分類(多分類以 / 分開，子分類以 # 間隔，例： A#B#E/C#D#F，沒有則空白即可)': item.shape || '',
+            '商品狀態(Y:上架/N:下架)': 'Y',
+            '商品 SEO-Title': item.name || '',
+            '商品 SEO-Description': item.description || '',
+            '商品 SEO-Keywords': item.hashtags || '',
+            '商品描述': item.description || '',
+            '常見問題': '',
+            '商品備註': '',
+            '是否為預購商品(Y:是/N:否)': 'N',
+            '商品預購提示(適用於[是否為預購商品]填入Y之商品)': '',
+            '商品摘要': '',
+            '商品副標題': '',
+            '商品圖片(填入圖片網址，多張圖片以,分開，系統會自動下載，支援JPG/PNG/GIF/WebP格式)': imageUrls,
+            '規格圖片URL(填入圖片網址，系統會自動下載並綁定到該規格，支援JPG/PNG/GIF/WebP格式)': '',
+            '商品重量(公斤)': '',
+            '商品長度(公分)': '',
+            '商品寬度(公分)': '',
+            '商品高度(公分)': '',
+            '顯示主商品圖數量': '',
+            '允許購買會員等級(填入等級代號，以,分開，留空表示全部會員皆可購買)': ''
+          };
+        });
 
         // 將 JSON 資料轉為 CSV 字串
         const csv = Papa.unparse(exportData);
@@ -379,7 +410,7 @@
         
         // 格式化當天日期，產生檔案名稱
         const dateStr = new Date().toLocaleDateString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '');
-        const fileName = inventoryShapeFilter === 'All' ? `全部款式庫存_${dateStr}.csv` : `${inventoryShapeFilter}庫存_${dateStr}.csv`;
+        const fileName = inventoryShapeFilter === 'All' ? `全部款式匯入表_${dateStr}.csv` : `${inventoryShapeFilter}款式匯入表_${dateStr}.csv`;
         
         link.setAttribute("download", fileName);
         document.body.appendChild(link);
