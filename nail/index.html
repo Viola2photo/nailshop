@@ -358,6 +358,13 @@
         const exportData = displayInventory.flatMap(item => {
           const sizes = ['XS', 'S', 'M', 'L'];
 
+          // 處理 hashtags，移除 '#' 並用半形逗號 ',' 串接
+          const processedKeywords = (item.hashtags || '')
+            .split('#')
+            .map(tag => tag.trim())
+            .filter(tag => tag !== '')
+            .join(',');
+
           return sizes.map(size => {
             return {
               '商品名稱(必填)': item.name || '未命名款式',
@@ -376,7 +383,7 @@
               '商品狀態(Y:上架/N:下架)': 'Y',
               '商品 SEO-Title': item.name || '',
               '商品 SEO-Description': item.description || '',
-              '商品 SEO-Keywords': item.hashtags || '',
+              '商品 SEO-Keywords': processedKeywords,
               '商品描述': item.description || '',
               '常見問題': '',
               '商品備註': '',
