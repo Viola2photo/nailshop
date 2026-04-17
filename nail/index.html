@@ -15,6 +15,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-storage-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-functions-compat.js"></script>
   
   <!-- PapaParse for CSV -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
@@ -36,6 +37,7 @@
     const auth = firebase.auth();
     const db = firebase.firestore();
     const storage = firebase.storage(); 
+    const functions = firebase.functions();
     const appId = 'nail-inventory-app';
     const adminUserId = "MvkJo5e1kEcBS0fGGMr4RKdQjYg1";
 
@@ -74,7 +76,7 @@
       });
     };
 
-    // 提取圖片特徵：平均RGB值
+    // 提取圖片特徵：平均RGB值和形狀
     const extractImageFeatures = (base64String) => {
       return new Promise((resolve) => {
         const img = new Image();
@@ -96,7 +98,8 @@
           r = Math.round(r / pixelCount);
           g = Math.round(g / pixelCount);
           b = Math.round(b / pixelCount);
-          resolve({ r, g, b });
+          const aspectRatio = canvas.width / canvas.height;
+          resolve({ r, g, b, aspectRatio });
         };
         img.src = base64String;
       });
@@ -394,26 +397,46 @@
           // 提取上傳圖片的特徵
           const uploadFeatures = await extractImageFeatures(compressedBase64);
           
-          // 與資料庫匹配：比較顏色特徵和文字
+          // 使用 Firebase Function 提取標籤
+          let visionLabels = [];
+          try {
+            visionLabels = await callVisionAPI(compressedBase64);
+          } catch (error) {
+            console.warn('Vision API 調用失敗，使用備用匹配:', error);
+          }
+          
+          // 與資料庫匹配：比較顏色特徵、形狀、Vision標籤和文字
           let bestMatch = null;
           let minDistance = Infinity;
           for (const item of inventory) {
-            let distance = Infinity;
+            let distance = 0;
+            
+            // 顏色和形狀距離
             if (item.features) {
-              // 計算顏色距離 (Euclidean distance)
               const dr = item.features.r - uploadFeatures.r;
               const dg = item.features.g - uploadFeatures.g;
               const db = item.features.b - uploadFeatures.b;
-              distance = Math.sqrt(dr * dr + dg * dg + db * db);
+              const colorDistance = Math.sqrt(dr * dr + dg * dg + db * db);
+              const shapeDistance = Math.abs(item.features.aspectRatio - uploadFeatures.aspectRatio) * 50;
+              distance += colorDistance + shapeDistance;
+            } else {
+              distance += 100; // 沒有特徵的懲罰
             }
             
-            // 如果沒有特徵或距離太大，使用文字匹配作為備用
-            if (distance > 50 || !item.features) {
+            // Vision API 標籤匹配
+            if (visionLabels.length > 0) {
               const itemText = (item.hashtags || '').toLowerCase() + ' ' + (item.description || '').toLowerCase() + ' ' + (item.name || '').toLowerCase();
-              const mockLabels = ['nail', 'art', 'beauty', 'fashion', 'design', 'style', 'color', 'pattern'];
-              const selectedLabels = mockLabels.filter(() => Math.random() > 0.5);
+              const visionScore = visionLabels.reduce((acc, label) => acc + (itemText.includes(label) ? 1 : 0), 0);
+              distance -= visionScore * 20; // 匹配標籤減少距離
+            }
+            
+            // 備用文字匹配
+            if (distance > 150) {
+              const itemText = (item.hashtags || '').toLowerCase() + ' ' + (item.description || '').toLowerCase() + ' ' + (item.name || '').toLowerCase();
+              const mockLabels = ['nail', 'art', 'beauty', 'fashion', 'design', 'style', 'color', 'pattern', 'glitter', 'matte', 'shiny'];
+              const selectedLabels = mockLabels.filter(() => Math.random() > 0.3);
               const score = selectedLabels.reduce((acc, label) => acc + (itemText.includes(label) ? 1 : 0), 0);
-              distance = score > 0 ? 100 - score * 10 : 200; // 文字匹配給予較高距離
+              distance = score > 0 ? 150 - score * 15 : 300;
             }
             
             if (distance < minDistance) {
@@ -423,11 +446,11 @@
           }
           
           // 如果最小距離小於閾值，認為匹配
-          if (bestMatch && minDistance < 150) {
+          if (bestMatch && minDistance < 200) {
             setRecognizedItem(bestMatch);
-            showToast(`識別成功！匹配款式：${bestMatch.name}`, 'success');
+            showToast(`識別成功！匹配款式：${bestMatch.name} (距離: ${minDistance.toFixed(2)})`, 'success');
           } else {
-            showToast('未找到匹配的款式，請手動建檔', 'error');
+            showToast(`未找到匹配的款式，請手動建檔 (最近距離: ${minDistance.toFixed(2)})`, 'error');
           }
         } catch (error) {
           console.error(error);
@@ -435,6 +458,13 @@
         } finally {
           setIsRecognizing(false);
         }
+      };
+
+      // 調用 Firebase Function 進行圖像分析
+      const callVisionAPI = async (base64Image) => {
+        const analyzeImage = functions.httpsCallable('analyzeImage');
+        const result = await analyzeImage({ imageBase64: base64Image });
+        return result.data.labels;
       };
 
       // ========== 新增：匯出符合商城匯入規範的 CSV ==========
