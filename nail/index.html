@@ -74,6 +74,34 @@
       });
     };
 
+    // 提取圖片特徵：平均RGB值
+    const extractImageFeatures = (base64String) => {
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0);
+          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const data = imageData.data;
+          let r = 0, g = 0, b = 0;
+          const pixelCount = data.length / 4;
+          for (let i = 0; i < data.length; i += 4) {
+            r += data[i];
+            g += data[i + 1];
+            b += data[i + 2];
+          }
+          r = Math.round(r / pixelCount);
+          g = Math.round(g / pixelCount);
+          b = Math.round(b / pixelCount);
+          resolve({ r, g, b });
+        };
+        img.src = base64String;
+      });
+    };
+
     const uploadBase64ToStorage = async (base64String, fileNamePrefix) => {
       const storageRef = storage.ref();
       const fileName = `products/${Date.now()}_${fileNamePrefix}_${Math.random().toString(36).substr(2, 5)}.jpg`;
@@ -245,7 +273,9 @@
           const newMedia = await Promise.all(Array.from(files).map(async (f) => {
             const compressedBase64 = await compressImage(f, 800);
             const downloadUrl = await uploadBase64ToStorage(compressedBase64, 'draft');
-            return { id: Math.random().toString(36).substr(2, 9), url: downloadUrl, type: 'image' };
+            // 提取特徵
+            const features = await extractImageFeatures(compressedBase64);
+            return { id: Math.random().toString(36).substr(2, 9), url: downloadUrl, type: 'image', features };
           }));
           
           setDrafts(drafts.map(d => d.uid === uid ? { ...d, formData: { ...d.formData, media: [...d.formData.media, ...newMedia] } } : d));
@@ -268,9 +298,11 @@
         try {
           const batch = db.batch();
           for (const draft of drafts) {
+            const features = draft.formData.media[0]?.features || null; // 使用第一張圖的特徵
             const docRef = db.collection('artifacts').doc(appId).collection('users').doc(adminUserId).collection('inventory').doc(draft.formData.id);
             batch.set(docRef, { 
               ...draft.formData, 
+              features,
               createdAt: new Date().toISOString() 
             });
           }
@@ -359,30 +391,39 @@
           const compressedBase64 = await compressImage(file, 800);
           setRecognizeImage(compressedBase64);
           
-          // 模擬圖像識別：這裡可以替換為真實的API調用
-          // 例如使用Google Vision API、Clarifai或自定義AI模型
-          // const labels = await callVisionAPI(compressedBase64);
-          const mockLabels = ['nail', 'art', 'beauty', 'fashion', 'design', 'style', 'color', 'pattern']; // 模擬提取的標籤
+          // 提取上傳圖片的特徵
+          const uploadFeatures = await extractImageFeatures(compressedBase64);
           
-          // 隨機選擇一些標籤來模擬真實性
-          const selectedLabels = mockLabels.filter(() => Math.random() > 0.5);
-          
-          // 與資料庫匹配：比較hashtags和描述
+          // 與資料庫匹配：比較顏色特徵和文字
           let bestMatch = null;
-          let maxScore = 0;
+          let minDistance = Infinity;
           for (const item of inventory) {
-            const itemText = (item.hashtags || '').toLowerCase() + ' ' + (item.description || '').toLowerCase() + ' ' + (item.name || '').toLowerCase();
-            const score = selectedLabels.reduce((acc, label) => {
-              return acc + (itemText.includes(label) ? 1 : 0);
-            }, 0);
-            if (score > maxScore) {
-              maxScore = score;
+            let distance = Infinity;
+            if (item.features) {
+              // 計算顏色距離 (Euclidean distance)
+              const dr = item.features.r - uploadFeatures.r;
+              const dg = item.features.g - uploadFeatures.g;
+              const db = item.features.b - uploadFeatures.b;
+              distance = Math.sqrt(dr * dr + dg * dg + db * db);
+            }
+            
+            // 如果沒有特徵或距離太大，使用文字匹配作為備用
+            if (distance > 50 || !item.features) {
+              const itemText = (item.hashtags || '').toLowerCase() + ' ' + (item.description || '').toLowerCase() + ' ' + (item.name || '').toLowerCase();
+              const mockLabels = ['nail', 'art', 'beauty', 'fashion', 'design', 'style', 'color', 'pattern'];
+              const selectedLabels = mockLabels.filter(() => Math.random() > 0.5);
+              const score = selectedLabels.reduce((acc, label) => acc + (itemText.includes(label) ? 1 : 0), 0);
+              distance = score > 0 ? 100 - score * 10 : 200; // 文字匹配給予較高距離
+            }
+            
+            if (distance < minDistance) {
+              minDistance = distance;
               bestMatch = item;
             }
           }
           
-          // 如果匹配分數足夠高，認為是匹配
-          if (bestMatch && maxScore >= 1) {
+          // 如果最小距離小於閾值，認為匹配
+          if (bestMatch && minDistance < 150) {
             setRecognizedItem(bestMatch);
             showToast(`識別成功！匹配款式：${bestMatch.name}`, 'success');
           } else {
@@ -527,12 +568,45 @@
                     <div className="flex-1 overflow-hidden w-full">
                        <ShapeFilter activeShape={inventoryShapeFilter} onShapeSelect={setInventoryShapeFilter} className="!mb-4" />
                     </div>
-                    <button 
-                      onClick={handleExportCSV} 
-                      className="flex-shrink-0 bg-green-50 text-green-600 border border-green-200 hover:bg-green-600 hover:text-white px-4 py-2 rounded-full font-black text-xs shadow-sm transition-all flex items-center gap-1 whitespace-nowrap"
-                    >
-                      <span className="text-sm">📥</span> <span className="hidden sm:inline">匯出{inventoryShapeFilter === 'All' ? '全部' : inventoryShapeFilter}報表</span>
-                    </button>
+                    <div className="flex gap-2">
+                      <button 
+                        onClick={async () => {
+                          showToast("正在更新特徵，請稍候...", "info");
+                          try {
+                            const batch = db.batch();
+                            for (const item of inventory) {
+                              if (item.media && item.media[0] && !item.features) {
+                                // 下載圖片並提取特徵
+                                const response = await fetch(item.media[0].url);
+                                const blob = await response.blob();
+                                const base64 = await new Promise(resolve => {
+                                  const reader = new FileReader();
+                                  reader.onload = () => resolve(reader.result);
+                                  reader.readAsDataURL(blob);
+                                });
+                                const features = await extractImageFeatures(base64);
+                                const docRef = db.collection('artifacts').doc(appId).collection('users').doc(adminUserId).collection('inventory').doc(item.docId);
+                                batch.update(docRef, { features });
+                              }
+                            }
+                            await batch.commit();
+                            showToast("特徵更新完成！", "success");
+                          } catch (error) {
+                            console.error(error);
+                            showToast("更新失敗", "error");
+                          }
+                        }} 
+                        className="flex-shrink-0 bg-purple-50 text-purple-600 border border-purple-200 hover:bg-purple-600 hover:text-white px-3 py-2 rounded-full font-black text-xs shadow-sm transition-all"
+                      >
+                        更新特徵
+                      </button>
+                      <button 
+                        onClick={handleExportCSV} 
+                        className="flex-shrink-0 bg-green-50 text-green-600 border border-green-200 hover:bg-green-600 hover:text-white px-4 py-2 rounded-full font-black text-xs shadow-sm transition-all flex items-center gap-1 whitespace-nowrap"
+                      >
+                        <span className="text-sm">📥</span> <span className="hidden sm:inline">匯出{inventoryShapeFilter === 'All' ? '全部' : inventoryShapeFilter}報表</span>
+                      </button>
+                    </div>
                   </div>
                   
                   {isLoadingDB ? (
