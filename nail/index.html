@@ -155,6 +155,10 @@
       // 款式庫分類過濾
       const [inventoryShapeFilter, setInventoryShapeFilter] = useState('All');
       
+      // 匯出報表相關狀態
+      const [showExportModal, setShowExportModal] = useState(false);
+      const [exportDateRange, setExportDateRange] = useState({ start: '', end: '' });
+      
       // 盤點相關狀態
       const [scanQuery, setScanQuery] = useState('');
       const [scanShapeFilter, setScanShapeFilter] = useState('All');
@@ -371,6 +375,17 @@
         }
       };
 
+      // 計算系統總庫存
+      const systemTotalStock = useMemo(() => {
+        return inventory.reduce((acc, item) => {
+          acc.XS += (item.stock?.XS || 0);
+          acc.S += (item.stock?.S || 0);
+          acc.M += (item.stock?.M || 0);
+          acc.L += (item.stock?.L || 0);
+          return acc;
+        }, { XS: 0, S: 0, M: 0, L: 0 });
+      }, [inventory]);
+
       // 過濾後的庫存 (款式庫用)
       const displayInventory = useMemo(() => {
         return inventory.filter(i => inventoryShapeFilter === 'All' || i.shape === inventoryShapeFilter);
@@ -467,19 +482,36 @@
         return result.data.labels;
       };
 
-      // ========== 新增：匯出符合商城匯入規範的 CSV ==========
+      // ========== 匯出符合商城匯入規範的 CSV (支援時間區間) ==========
       const handleExportCSV = () => {
-        if (displayInventory.length === 0) {
-          showToast("目前沒有資料可匯出", "error");
+        let exportDataList = displayInventory;
+
+        // 如果有設定時間區間，進行過濾
+        if (exportDateRange.start || exportDateRange.end) {
+          exportDataList = displayInventory.filter(item => {
+            if (!item.createdAt) return true; // 如果沒有時間欄位，預設保留
+            const itemDate = new Date(item.createdAt);
+            if (isNaN(itemDate.getTime())) return true;
+
+            const start = exportDateRange.start ? new Date(exportDateRange.start + 'T00:00:00') : null;
+            const end = exportDateRange.end ? new Date(exportDateRange.end + 'T23:59:59') : null;
+
+            if (start && itemDate < start) return false;
+            if (end && itemDate > end) return false;
+            return true;
+          });
+        }
+
+        if (exportDataList.length === 0) {
+          showToast("在此時間區間內沒有資料可匯出", "error");
+          setShowExportModal(false);
           return;
         }
 
         // 依照「匯入款式規範 - 工作表1.csv」的標準標題進行資料映射
-        // 改用 flatMap，將每個款式的 XS, S, M, L 拆分為各自獨立的一列
-        const exportData = displayInventory.flatMap(item => {
+        const exportData = exportDataList.flatMap(item => {
           const sizes = ['XS', 'S', 'M', 'L'];
 
-          // 處理 hashtags，移除 '#' 並用半形逗號 ',' 串接
           const processedKeywords = (item.hashtags || '')
             .split('#')
             .map(tag => tag.trim())
@@ -512,7 +544,7 @@
               '商品預購提示(適用於[是否為預購商品]填入Y之商品)': '',
               '商品摘要': '',
               '商品副標題': '',
-              '商品圖片(填入圖片網址，多張圖片以,分開，系統會自動下載，支援JPG/PNG/GIF/WebP格式)': '', // 依需求：產品圖片欄位保持空白
+              '商品圖片(填入圖片網址，多張圖片以,分開，系統會自動下載，支援JPG/PNG/GIF/WebP格式)': '',
               '規格圖片URL(填入圖片網址，系統會自動下載並綁定到該規格，支援JPG/PNG/GIF/WebP格式)': '',
               '商品重量(公斤)': '',
               '商品長度(公分)': '',
@@ -524,18 +556,14 @@
           });
         });
 
-        // 將 JSON 資料轉為 CSV 字串
         const csv = Papa.unparse(exportData);
-        // 加上 BOM \uFEFF，確保 Excel 打開時不會有中文亂碼
         const csvWithBOM = "\uFEFF" + csv;
         
-        // 建立 Blob 與動態下載連結
         const blob = new Blob([csvWithBOM], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
         link.setAttribute("href", url);
         
-        // 格式化當天日期，產生檔案名稱
         const dateStr = new Date().toLocaleDateString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '');
         const fileName = inventoryShapeFilter === 'All' ? `全部款式匯入表_${dateStr}.csv` : `${inventoryShapeFilter}款式匯入表_${dateStr}.csv`;
         
@@ -543,11 +571,11 @@
         document.body.appendChild(link);
         link.click();
         
-        // 清理資源
         document.body.removeChild(link);
         URL.revokeObjectURL(url);
         
-        showToast(`成功匯出 ${displayInventory.length} 筆報表`, 'success');
+        showToast(`成功匯出 ${exportDataList.length} 筆報表`, 'success');
+        setShowExportModal(false);
       };
 
       return (
@@ -606,7 +634,6 @@
                             const batch = db.batch();
                             for (const item of inventory) {
                               if (item.media && item.media[0] && !item.features) {
-                                // 下載圖片並提取特徵
                                 const response = await fetch(item.media[0].url);
                                 const blob = await response.blob();
                                 const base64 = await new Promise(resolve => {
@@ -631,7 +658,7 @@
                         更新特徵
                       </button>
                       <button 
-                        onClick={handleExportCSV} 
+                        onClick={() => setShowExportModal(true)} 
                         className="flex-shrink-0 bg-green-50 text-green-600 border border-green-200 hover:bg-green-600 hover:text-white px-4 py-2 rounded-full font-black text-xs shadow-sm transition-all flex items-center gap-1 whitespace-nowrap"
                       >
                         <span className="text-sm">📥</span> <span className="hidden sm:inline">匯出{inventoryShapeFilter === 'All' ? '全部' : inventoryShapeFilter}報表</span>
@@ -685,6 +712,21 @@
               {/* ===== 盤點分頁 ===== */}
               {activeTab === 'scan' && (
                 <div className="max-w-2xl mx-auto space-y-4 pb-20">
+                  {/* 新增系統總庫存顯示區塊 */}
+                  <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-col md:flex-row justify-between items-center mb-4 gap-4">
+                    <div className="text-sm font-black text-gray-700 flex items-center gap-2">
+                      <span className="text-xl">📊</span> 系統總庫存
+                    </div>
+                    <div className="flex gap-3 w-full md:w-auto justify-between md:justify-end">
+                      {['XS', 'S', 'M', 'L'].map(s => (
+                        <div key={s} className="flex flex-col items-center flex-1 md:flex-none">
+                          <span className="text-[10px] font-black text-gray-400 mb-1">{s}</span>
+                          <span className="bg-blue-50 text-blue-600 px-4 py-1.5 rounded-xl text-sm font-black border border-blue-100">{systemTotalStock[s]}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
                   <div className="flex gap-2">
                     <div className="flex-1 bg-white p-2 rounded-2xl shadow-sm border border-gray-100 flex items-center px-4">
                       <span className="text-gray-300 mr-3">🔍</span>
@@ -737,7 +779,6 @@
                     )}
                   </div>
 
-                  {/* 盤點確認上傳按鈕 (固定在底部) */}
                   {Object.keys(pendingScans).length > 0 && (
                     <div className="fixed bottom-24 left-0 right-0 flex justify-center z-40 px-6">
                       <button onClick={submitBatchScans} className="bg-green-500 text-white w-full max-w-sm py-4 rounded-full font-black shadow-xl shadow-green-500/30 flex items-center justify-center gap-2 animate-bounce-short hover:bg-green-600 active:scale-95 transition-all border border-green-400">
@@ -926,6 +967,45 @@
                 </div>
               )}
             </main>
+          )}
+
+          {/* ===== 匯出時間設定彈出視窗 ===== */}
+          {showExportModal && (
+            <div className="fixed inset-0 z-[110] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+              <div className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl animate-scale-in flex flex-col p-6 space-y-6">
+                <div className="flex justify-between items-center">
+                  <h3 className="font-black text-lg text-gray-900">📥 設定匯出時間區間</h3>
+                  <button onClick={() => setShowExportModal(false)} className="text-gray-400 hover:text-gray-900 font-black text-xl">✕</button>
+                </div>
+                
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-[10px] font-black text-gray-400 mb-1 uppercase tracking-widest">開始日期</label>
+                    <input 
+                      type="date" 
+                      value={exportDateRange.start} 
+                      onChange={e => setExportDateRange(prev => ({...prev, start: e.target.value}))} 
+                      className="w-full bg-gray-50 p-3 rounded-xl font-black outline-none border border-transparent focus:border-green-300 text-sm" 
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-gray-400 mb-1 uppercase tracking-widest">結束日期</label>
+                    <input 
+                      type="date" 
+                      value={exportDateRange.end} 
+                      onChange={e => setExportDateRange(prev => ({...prev, end: e.target.value}))} 
+                      className="w-full bg-gray-50 p-3 rounded-xl font-black outline-none border border-transparent focus:border-green-300 text-sm" 
+                    />
+                  </div>
+                  <p className="text-[10px] text-gray-400 font-bold bg-blue-50 p-2 rounded-lg">＊若不選擇時間，將匯出目前分類列表中的「所有資料」。</p>
+                </div>
+                
+                <div className="flex gap-3">
+                  <button onClick={() => setShowExportModal(false)} className="flex-1 bg-gray-100 text-gray-600 py-3 rounded-xl font-black text-sm hover:bg-gray-200 transition-all">取消</button>
+                  <button onClick={handleExportCSV} className="flex-1 bg-green-500 text-white py-3 rounded-xl font-black text-sm shadow-md hover:bg-green-600 transition-all">確認匯出</button>
+                </div>
+              </div>
+            </div>
           )}
 
           {/* ===== 盤點專用彈出視窗 ===== */}
